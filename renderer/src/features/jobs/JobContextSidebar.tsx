@@ -51,7 +51,7 @@ export function JobContextSidebar({ job }: JobContextSidebarProps) {
           <Field label="视频文件" value={job.videoPath} />
           <Field label="音频文件" value={job.audioPath} />
           <Field label="成片文件" value={job.videoOutputPath} />
-          <Field label="HyperFrames 项目" value={job.videoProjectPath} />
+          <Field label="渲染工程" value={job.videoProjectPath} />
           <Field label="存储路径" value={job.storagePath} />
           {(job.errorMessage || job.error || job.downloadErrorMessage || job.audioErrorMessage || job.transcriptErrorMessage) && (
             <div className="rounded-lg border border-danger-line bg-danger-soft p-3 text-sm text-danger">

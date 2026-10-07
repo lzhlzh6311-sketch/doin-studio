@@ -32,6 +32,7 @@ import { RuntimeEnvironmentPanel } from '../components/RuntimeEnvironmentPanel';
 import { RuntimeStatusList } from '../components/RuntimeStatusList';
 import { XhsLoginPanel } from '../components/XhsLoginPanel';
 import { WechatSettingsPanel } from '../components/WechatSettingsPanel';
+import { WhisperModelCard } from '../components/WhisperModelCard';
 import { useRuntimeStatus } from '../hooks/useRuntimeStatus';
 import { apiClient } from '../services/api';
 import { parseOutputLimit, toOutputLimitForm, type OutputLimitMode } from '../utils/ai-output-limit';
@@ -725,26 +726,19 @@ function AsrSection() {
       <SectionHeader
         icon={Mic}
         title="语音转录"
-        description="视频转录由软件内置 Whisper 本地完成。"
+        description="视频转录在本机离线完成，不需要额外的语音识别密钥。"
       />
 
       <div className="rounded-lg border border-line bg-panel p-6">
         <div className="space-y-4">
-          <div className="rounded-lg border border-success-line bg-success-soft p-4 text-sm text-success">
-            <div className="flex items-start gap-3">
-              <AlertCircle size={18} className="mt-0.5 shrink-0" />
-              <div>
-                <p className="font-semibold">内置 Whisper 本地转录</p>
-                <p className="mt-1 leading-6">
-                  软件会随安装包携带 whisper.cpp 和 ggml-small 多语言模型。视频转录在本机完成，不需要 ASR API Key、Python、FunASR 或 faster-whisper。
-                </p>
-              </div>
-            </div>
-          </div>
+          <WhisperModelCard />
+          <p className="text-sm leading-6 text-ink-muted">
+            转录引擎随软件安装；语音模型（多语言标准版 版）为了让安装包更小，改为第一次转录时自动下载，优先走国内镜像，支持断点续传。下载完成后完全离线运行。
+          </p>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <StorageCard title="转录引擎" value="whisper.cpp" />
-            <StorageCard title="内置模型" value="ggml-small" />
+            <StorageCard title="语音模型" value="多语言标准版" />
             <StorageCard title="运行方式" value="本地离线" />
           </div>
         </div>
@@ -773,6 +767,36 @@ function StorageSection() {
   );
 }
 
+const CONVENIENCE_TOGGLES = [
+  { key: 'doin-studio.clipboard-prompt-off', label: '复制抖音链接后提示导入', description: '切回应用时检查剪贴板里的抖音链接，只在本机识别，不上传。' },
+  { key: 'doin-studio.quickstart-dismissed', label: '首页显示「开始之前」面板', description: '准备清单和三条创作入口。' },
+] as const;
+
+/** 便捷功能开关：存的是「关闭」标记，所以勾选 = 没有标记。 */
+function ConvenienceSettings() {
+  const readOff = (key: string) => { try { return window.localStorage.getItem(key) === '1'; } catch { return false; } };
+  const [off, setOff] = useState<Record<string, boolean>>(() => Object.fromEntries(CONVENIENCE_TOGGLES.map(t => [t.key, readOff(t.key)])));
+  const toggle = (key: string) => {
+    const next = !off[key];
+    try { if (next) window.localStorage.setItem(key, '1'); else window.localStorage.removeItem(key); } catch { /* 本次仍生效 */ }
+    setOff(state => ({ ...state, [key]: next }));
+  };
+  return (
+    <div className="rounded-lg border border-line bg-panel p-5" data-testid="convenience-settings">
+      <h3 className="font-semibold text-ink">便捷功能</h3>
+      <div className="mt-3 space-y-3">
+        {CONVENIENCE_TOGGLES.map(t => (
+          <label key={t.key} className="flex cursor-pointer items-start gap-3">
+            <input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--color-accent)]" checked={!off[t.key]} onChange={() => toggle(t.key)} />
+            <span><span className="block text-sm font-medium text-ink">{t.label}</span><span className="block text-xs text-ink-muted">{t.description}</span></span>
+          </label>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-ink-subtle">快捷键：Ctrl+N（Mac 为 ⌘N）新建视频任务。长任务完成时会发系统通知（应用在前台时不打扰）。</p>
+    </div>
+  );
+}
+
 function AdvancedSection() {
   return (
     <section className="space-y-6">
@@ -781,6 +805,7 @@ function AdvancedSection() {
         title="高级选项"
         description="安全策略、运行诊断和本地数据管理。"
       />
+      <ConvenienceSettings />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <InfoCard
           icon={ShieldCheck}
@@ -809,7 +834,7 @@ function AdvancedSection() {
           <div className="rounded-lg border border-danger-line bg-panel p-4 flex items-center justify-between">
             <div>
               <p className="font-medium text-ink">重置所有本地数据</p>
-              <p className="text-xs text-ink-muted mt-0.5">清除所有任务、合集、发布包和 Skill，保留 API Key 和配置</p>
+              <p className="text-xs text-ink-muted mt-0.5">清除所有任务、合集、发布包和技能，保留 API Key 和配置</p>
             </div>
             <button
               type="button"

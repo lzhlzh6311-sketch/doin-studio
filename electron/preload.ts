@@ -30,6 +30,9 @@ export interface ElectronAPI {
 
   // 系统通知
   showNotification: (title: string, body: string) => Promise<void>;
+
+  // 剪贴板（只读文本）
+  readClipboardText: () => Promise<string>;
 }
 
 export interface AIKeyConfig {
@@ -112,6 +115,9 @@ contextBridge.exposeInMainWorld('electron', {
   // 系统通知
   showNotification: (title: string, body: string) =>
     ipcRenderer.invoke('show-notification', title, body),
+
+  // 剪贴板
+  readClipboardText: () => ipcRenderer.invoke('read-clipboard-text'),
 } as ElectronAPI);
 
 // TypeScript 类型声明

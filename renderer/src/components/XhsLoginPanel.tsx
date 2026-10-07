@@ -24,7 +24,7 @@ const XHS_COPY: QrLoginCopy = {
   testId: 'xhs-login-panel',
   qrTestId: 'xhs-qr',
   footnote:
-    '登录态保存在本机 storage 里的小红书会话目录中，不会离开 storage。'
+    '登录态保存在本机数据目录的小红书会话文件夹中，不会上传到任何地方。'
     + '本工具只做发布：不读取你的笔记、不搜索、不评论、不点赞收藏。'
     + '⚠️ 自动化发布违反平台规则，风险由你的账号承担，平台可能警告、限流或封号。',
 };

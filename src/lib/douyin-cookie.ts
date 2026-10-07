@@ -425,7 +425,7 @@ export async function extractCookiesWithQRLogin(loginTimeoutSec = 120): Promise<
   if (!result.hasAuth) {
     throw new Error(
       "Login timeout: no session cookie detected after " + loginTimeoutSec + " seconds.\n" +
-      "Please make sure you scanned the QR code and logged in successfully."
+      "请确认已用抖音 App 扫码并登录成功。"
     );
   }
   console.log("[cookie] QR login successful — sessionid:", result.authInfo.sessionid);

@@ -23,6 +23,7 @@ declare global {
       openExternal?: (url: string) => Promise<void>;
       showItemInFolder?: (path: string) => Promise<void>;
       showNotification?: (title: string, body: string) => Promise<void>;
+      readClipboardText?: () => Promise<string>;
     };
   }
 }
@@ -61,6 +62,12 @@ export const desktop = {
     if (!injectedElectron?.showNotification) return { available: false };
     await injectedElectron.showNotification(title, body);
     return { available: true };
+  },
+
+  /** 读剪贴板文本；浏览器开发模式没有这项能力，返回 null（不弹浏览器权限框）。 */
+  async readClipboardText(): Promise<string | null> {
+    if (!injectedElectron?.readClipboardText) return null;
+    try { return await injectedElectron.readClipboardText(); } catch { return null; }
   },
 };
 

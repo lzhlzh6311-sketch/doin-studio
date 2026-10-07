@@ -41,7 +41,7 @@ try {
   await page.screenshot({ path: path.join(output, 'packaged-desktop.png') });
   await page.getByRole('button', { name: '创建作品', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByPlaceholder('https://www.douyin.com/video/...').fill('https://www.douyin.com/video/7420000000000000003');
+  await dialog.getByLabel('抖音视频链接').fill('https://www.douyin.com/video/7420000000000000003');
   await dialog.locator('input[placeholder^="例如："]').fill('Windows 安装包真实任务');
   await dialog.getByRole('button', { name: '创建任务', exact: true }).click();
   await page.waitForURL(/#\/jobs\//);

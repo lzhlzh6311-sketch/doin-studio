@@ -28,5 +28,5 @@ test('小红书面板写明「只做发布、不读取不互动」与风险自�
   assert.match(html, /不读取你的笔记、不搜索、不评论、不点赞收藏/u);
   assert.match(html, /风险由你的账号承担/u);
   // 登录态不许落到 storage 之外（与后端那条约束同一口径，文案也要说清）。
-  assert.match(html, /不会离开 storage/u);
+  assert.match(html, /不会上传到任何地方/u);
 });

@@ -81,7 +81,7 @@ test("AsrService reports a clear error when bundled Whisper resources are missin
 
   await assert.rejects(
     () => service.transcribe(audioPath),
-    /内置 Whisper 资源缺失或损坏.*whisper-cli.*ggml-small/s
+    /语音转录组件缺失或损坏.*whisper-cli.*ggml-small/s
   );
 });
 
@@ -108,6 +108,6 @@ test("AsrService decorates whisper.cpp command failures", async () => {
 
   await assert.rejects(
     () => service.transcribe(audioPath),
-    /whisper\.cpp 转录失败.*bad wav/s
+    /语音转录失败.*bad wav/s
   );
 });

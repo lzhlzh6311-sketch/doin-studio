@@ -7,7 +7,7 @@ import type { SkillViewData } from './SkillViewModal';
 
 describe('SkillViewModal', () => {
   const baseData: SkillViewData = {
-    skillName: '测试 Skill',
+    skillName: '测试技能',
     skillPath: '.claude/skills/test-skill/SKILL.md',
     skillMarkdown: '# 标题\n\n内容段落\n\n- 列表项 1\n- **粗体** 列表项 2\n\n```\ncode block\n```',
     sourceMarkdown: '# 原始数据\n\n这是来源内容',
@@ -41,7 +41,7 @@ describe('SkillViewModal', () => {
         onClose: () => {},
       })
     );
-    assert.ok(html.includes('测试 Skill'));
+    assert.ok(html.includes('测试技能'));
   });
 
   it('renders SKILL.md tab', () => {
@@ -74,12 +74,12 @@ describe('SkillViewModal', () => {
         onClose: () => {},
       })
     );
-    assert.ok(html.includes('加载 Skill 内容'));
+    assert.ok(html.includes('加载技能内容'));
   });
 
   it('renders without optional fields', () => {
     const minimalData: SkillViewData = {
-      skillName: '最小 Skill',
+      skillName: '最小技能',
       skillPath: '.claude/skills/minimal/SKILL.md',
       skillMarkdown: '最小内容',
       sourceMarkdown: '',
@@ -93,7 +93,7 @@ describe('SkillViewModal', () => {
         onClose: () => {},
       })
     );
-    assert.ok(html.includes('最小 Skill'));
+    assert.ok(html.includes('最小技能'));
     assert.ok(html.includes('元信息'));
     assert.ok(html.includes('原始来源'));
     // Should NOT have knowledge base tab

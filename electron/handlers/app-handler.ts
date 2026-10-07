@@ -1,4 +1,4 @@
-import { app, shell, Notification } from 'electron';
+import { app, shell, Notification, clipboard } from 'electron';
 import path from 'path';
 import { getServerPort } from '../main';
 import { getApiToken } from '../server';
@@ -35,6 +35,10 @@ export function registerAppHandlers(): void {
     }
     shell.showItemInFolder(path.normalize(filePath));
   });
+
+  // 读剪贴板文本：只给应用自己的页面（handleTrusted 校验发送方），用于「复制抖音链接后自动提示导入」。
+  // 截断到 4000 字，渲染端只在里面找抖音链接，不上传、不保存。
+  handleTrusted('read-clipboard-text', () => clipboard.readText().slice(0, 4000));
 
   // 显示系统通知
   handleTrusted('show-notification', (_, title: unknown, body: unknown) => {

@@ -82,10 +82,10 @@ export function SkillViewModal({ data, loading, onClose }: SkillViewModalProps) 
 
   if (loading) {
     return (
-      <Modal open onClose={onClose} size="sm" ariaLabel="加载 Skill 内容">
+      <Modal open onClose={onClose} size="sm" ariaLabel="加载技能内容">
         <div className="flex items-center gap-3 py-3">
           <Loader2 size={24} className="animate-spin text-ai" aria-hidden="true" />
-          <span className="text-ink">加载 Skill 内容…</span>
+          <span className="text-ink">加载技能内容…</span>
         </div>
       </Modal>
     );
@@ -130,7 +130,7 @@ export function SkillViewModal({ data, loading, onClose }: SkillViewModalProps) 
             <button
               onClick={onClose}
               className="rounded-lg p-2 text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
-              aria-label="关闭 Skill 查看"
+              aria-label="关闭技能查看"
             >
               <X size={20} />
             </button>

@@ -712,7 +712,7 @@ function ShotsContent({ cleaned, streamPreview }: { cleaned: CleanedScript | nul
     return (
       <div className="rounded-lg border border-dashed border-line bg-elevated py-14 text-center">
         <h3 className="font-semibold text-ink">镜头列表还没生成</h3>
-        <p className="mt-2 text-sm text-ink-muted">完成生成分镜后，这里会显示 HyperFrames 使用的短视频镜头规划。</p>
+        <p className="mt-2 text-sm text-ink-muted">完成生成分镜后，这里会显示成片使用的短视频镜头规划。</p>
       </div>
     );
   }

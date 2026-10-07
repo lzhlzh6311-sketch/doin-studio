@@ -97,7 +97,7 @@ export class MediaService {
     try {
       return await this.downloadViaPageParser(sourceUrl, jobId);
     } catch (error) {
-      pageError = error instanceof Error ? error : new Error("page parser download failed");
+      pageError = error instanceof Error ? error : new Error("网页解析下载失败");
     }
 
     // Try signed API (gets watermark-free video, needs auth cookie)
@@ -110,13 +110,13 @@ export class MediaService {
     try {
       return await this.downloadViaYtDlp(sourceUrl, jobId);
     } catch (error) {
-      const ytDlpError = error instanceof Error ? error : new Error("yt-dlp download failed");
+      const ytDlpError = error instanceof Error ? error : new Error("备用下载器下载失败");
       const hint = this.buildYtDlpHint();
       const message = [pageError?.message, ytDlpError.message, hint]
         .filter(Boolean)
         .join("\n")
         .trim();
-      throw new Error(message || "video download failed");
+      throw new Error(message || "视频下载失败");
     }
   }
 
@@ -159,7 +159,7 @@ export class MediaService {
       await this.storage.writeJson(path.join("raw", "audio", `${jobId}.json`), {
         ...manifestBase,
         status: "failed",
-        errorMessage: error instanceof Error ? error.message : "audio extraction failed"
+        errorMessage: error instanceof Error ? error.message : "音频提取失败"
       });
       throw this.decorateAudioError(error);
     }
@@ -222,7 +222,7 @@ export class MediaService {
       };
     } catch (error) {
       return {
-        errorMessage: error instanceof Error ? error.message : "ffprobe failed"
+        errorMessage: error instanceof Error ? error.message : "读取视频信息失败"
       };
     }
   }
@@ -313,7 +313,7 @@ export class MediaService {
 
   private async parseDouyinPageVideoInfo(sourceUrl: string): Promise<DouyinPageVideoInfo> {
     // ⚠️ 分享页不带登录 cookie 时，`_ROUTER_DATA` 里**没有** `videoInfoRes`
-    // （表现为 "unable to parse douyin video info"），而不是页面改版。
+    // （表现为 "无法解析抖音视频信息"），而不是页面改版。
     // 桌面版 `www.douyin.com/video/{id}` 更是只回 JS-VM 挑战页、连 `_ROUTER_DATA` 都没有。
     const cookie = await this.resolveDouyinCookie();
     const headers = cookie ? { ...DOUYIN_HEADERS, Cookie: cookie } : { ...DOUYIN_HEADERS };
@@ -325,13 +325,13 @@ export class MediaService {
     });
 
     if (!shareResponse.ok) {
-      throw new Error(`share link request failed: ${shareResponse.status}`);
+      throw new Error(`分享链接请求失败（HTTP ${shareResponse.status}）`);
     }
 
     const resolvedShareUrl = shareResponse.url;
     const videoId = this.extractVideoId(resolvedShareUrl);
     if (!videoId) {
-      throw new Error("unable to resolve douyin video id from share link");
+      throw new Error("无法从分享链接识别抖音视频");
     }
 
     const pageUrl = `https://www.iesdouyin.com/share/video/${videoId}`;
@@ -341,7 +341,7 @@ export class MediaService {
     });
 
     if (!pageResponse.ok) {
-      throw new Error(`page request failed: ${pageResponse.status}`);
+      throw new Error(`抖音页面请求失败（HTTP ${pageResponse.status}）`);
     }
 
     const html = await pageResponse.text();
@@ -353,7 +353,7 @@ export class MediaService {
     if (!videoInfoRes?.item_list?.length) {
       throw new Error(
         cookie
-          ? "unable to parse douyin video info"
+          ? "无法解析抖音视频信息"
           : "unable to parse douyin video info（未带抖音 cookie：分享页不会返回 videoInfoRes，请先在设置页扫码登录）"
       );
     }
@@ -361,7 +361,7 @@ export class MediaService {
     const item = videoInfoRes.item_list[0] as Record<string, any>;
     const rawVideoUrl = item?.video?.play_addr?.url_list?.[0];
     if (!rawVideoUrl) {
-      throw new Error("unable to parse douyin video url");
+      throw new Error("无法解析抖音视频地址");
     }
 
     const videoUrl = String(rawVideoUrl).replace("playwm", "play");
@@ -404,7 +404,7 @@ export class MediaService {
     });
 
     if (!response.ok || !response.body) {
-      throw new Error(`video download failed: ${response.status}`);
+      throw new Error(`视频下载失败（HTTP ${response.status}）`);
     }
 
     await pipeline(Readable.fromWeb(response.body as any), createWriteStream(filePath));
@@ -441,7 +441,7 @@ export class MediaService {
   private extractRouterData(html: string) {
     const match = html.match(/window\._ROUTER_DATA\s*=\s*(.*?)<\/script>/s);
     if (!match) {
-      throw new Error("unable to parse router data from douyin page");
+      throw new Error("无法解析抖音页面数据");
     }
 
     const rawJson = match[1].trim().replace(/;$/, "");
@@ -487,7 +487,7 @@ export class MediaService {
       );
 
     if (candidates.length === 0) {
-      throw new Error(`generated file not found for ${jobId}`);
+      throw new Error(`作品 ${jobId} 的生成文件不存在`);
     }
 
     if (!options.suffix) {
@@ -503,12 +503,12 @@ export class MediaService {
 
   private decorateYtDlpError(error: unknown) {
     if (!(error instanceof CommandError)) {
-      return error instanceof Error ? error : new Error("yt-dlp download failed");
+      return error instanceof Error ? error : new Error("备用下载器下载失败");
     }
 
     const hint = this.buildYtDlpHint();
     const message = [error.stderr.trim(), hint].filter(Boolean).join("\n").trim();
-    return new Error(message || "yt-dlp download failed");
+    return new Error(message || "备用下载器下载失败");
   }
 
   // ─── 签名 API 下载（无水印）────────────────────────────────────
@@ -521,7 +521,7 @@ export class MediaService {
   private async downloadViaSignedApi(sourceUrl: string, jobId: string): Promise<DownloadResult> {
     const videoId = this.extractVideoId(sourceUrl);
     if (!videoId) {
-      throw new Error("unable to extract video ID for signed API download");
+      throw new Error("无法识别视频 ID，签名接口下载失败");
     }
 
     // Dynamic imports to avoid circular dependency at module load
@@ -535,7 +535,7 @@ export class MediaService {
 
     const cookie = loadCookie();
     if (!cookie || !hasAuthCookie()) {
-      throw new Error("no auth cookie available for signed API download");
+      throw new Error("缺少抖音登录凭据，请先在设置里扫码登录抖音");
     }
 
     const { url, userAgent } = signAwemeDetailRequest(videoId);
@@ -549,13 +549,13 @@ export class MediaService {
     });
 
     if (!resp.ok) {
-      throw new Error(`signed API request failed: ${resp.status}`);
+      throw new Error(`签名接口请求失败（HTTP ${resp.status}）`);
     }
 
     const data = await resp.json() as Record<string, any>;
     const item = data?.aweme_detail as Record<string, any> | null;
     if (!item) {
-      throw new Error("signed API returned empty video data (may need login cookie)");
+      throw new Error("签名接口没有返回视频数据（可能需要重新登录抖音）");
     }
 
     const video = item.video as Record<string, any>;
@@ -573,7 +573,7 @@ export class MediaService {
           : null;
 
     if (!downloadUrl) {
-      throw new Error("unable to extract video URL from signed API response");
+      throw new Error("签名接口返回中没有视频地址");
     }
 
     const isWatermarkFree = typeof downloadAddr === "string";
@@ -604,10 +604,10 @@ export class MediaService {
 
   private decorateAudioError(error: unknown) {
     if (!(error instanceof CommandError)) {
-      return error instanceof Error ? error : new Error("audio extraction failed");
+      return error instanceof Error ? error : new Error("音频提取失败");
     }
 
-    const message = error.stderr.trim() || "audio extraction failed";
+    const message = error.stderr.trim() || "音频提取失败";
     return new Error(message);
   }
 }

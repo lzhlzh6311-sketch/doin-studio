@@ -875,7 +875,7 @@ test("publishing registration does not add auth or alter the four manual step en
         method: "POST",
       });
       assert.equal(response.response.status, 404);
-      assert.equal(response.body.message, "job not found");
+      assert.equal(response.body.message, "作品不存在或已被删除");
     }
   } finally {
     await fixture.close();

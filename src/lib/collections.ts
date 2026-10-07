@@ -109,7 +109,7 @@ export class CollectionStore {
   }> {
     const existing = await this.get(collectionId);
     if (!existing) {
-      throw new Error("collection not found");
+      throw new Error("合集不存在或已被删除");
     }
 
     const pageUrl = existing.sourcePageUrl;
@@ -146,7 +146,7 @@ export class CollectionStore {
   ): Promise<{ collection: CollectionRecord; createdJobs: JobRecord[] }> {
     const collection = await this.get(collectionId);
     if (!collection) {
-      throw new Error("collection not found");
+      throw new Error("合集不存在或已被删除");
     }
 
     const selectedSet = new Set(selectedAwemeIds);
@@ -155,7 +155,7 @@ export class CollectionStore {
     );
 
     if (selectedItems.length === 0) {
-      throw new Error("no matching videos found in collection");
+      throw new Error("合集里没有找到符合条件的视频");
     }
 
     // 去重：跳过已经创建过的

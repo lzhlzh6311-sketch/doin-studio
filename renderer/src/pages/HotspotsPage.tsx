@@ -36,8 +36,10 @@ export function HotspotBoardCard({ board, favorites, busy, onToggle, onSelectSou
       return <li key={item.itemId} className="flex items-start gap-3 px-4 py-3 hover:bg-elevated/50">
         <span className={`w-6 shrink-0 pt-0.5 text-right font-mono text-sm tabular-nums ${item.rank <= 3 ? 'text-accent' : 'text-ink-subtle'}`}>{item.rank}</span>
         <div className="min-w-0 flex-1"><SourceLink url={item.url} className="break-words text-sm leading-6 text-ink hover:text-accent">{item.title}</SourceLink>
-          {board.source.id === 'douyin' && <SourceLink url={`https://www.douyin.com/search/${encodeURIComponent(item.title)}?type=video`} className="mt-1 block text-xs text-accent hover:underline">在抖音查找相关视频 ↗</SourceLink>}
-          {onCreate && <button type="button" onClick={() => onCreate(item)} className="mt-1 block text-xs text-accent hover:underline">以此创作公众号文章</button>}
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            {onCreate && <button type="button" onClick={() => onCreate(item)} className="text-accent hover:underline">以此写公众号</button>}
+            <SourceLink url={`https://www.douyin.com/search/${encodeURIComponent(item.title)}?type=video`} className="text-accent hover:underline">找相关抖音视频做二创 ↗</SourceLink>
+          </div>
           {item.heat && <p className="mt-1 text-xs text-ink-muted">原始热度 · {item.heat}</p>}
         </div>
         <Button size="icon" variant="ghost" disabled={busy} aria-label={`${saved ? '取消收藏' : '收藏'}：${item.title}`} aria-pressed={saved} onClick={() => onToggle(item)} className={saved ? 'text-accent' : ''}><Bookmark size={16} fill={saved ? 'currentColor' : 'none'} /></Button>
@@ -151,7 +153,7 @@ export function HotspotsPage() {
       <div className={`gap-5 ${sourceId === 'all' ? 'columns-1 lg:columns-2 2xl:columns-3' : 'mx-auto max-w-3xl columns-1'}`}>{visibleBoards.map(board => <HotspotBoardCard key={board.source.id} board={board} favorites={favorites} busy={busy || loading || !favoritesReady} onCreate={create} onToggle={item => void toggle(item)} onSelectSource={() => setView('source', board.source.id)} compact={sourceId === 'all' && !search.trim()} now={now} />)}</div> :
       visibleFavorites.length ? <div className="grid gap-4 lg:grid-cols-2">{visibleFavorites.map(item => <article key={item.id} className="min-w-0 rounded-xl border border-line bg-panel p-5">
         <p className="mb-2 text-xs text-ink-muted">{boards.find(board => board.source.id === item.sourceId)?.source.name ?? item.sourceId} · 收藏时排名 {item.rank} · 榜单获取于 {timestamp(item.fetchedAt)}</p>
-        <button type="button" onClick={() => create(item)} className="mb-2 block text-xs text-accent hover:underline">以此创作公众号文章</button><SourceLink url={item.url} className="break-words font-medium leading-6 text-ink hover:text-accent">{item.title}<ExternalLink size={13} className="ml-2 inline" /></SourceLink>
+        <button type="button" onClick={() => create(item)} className="mb-2 block text-xs text-accent hover:underline">以此写公众号</button><SourceLink url={item.url} className="break-words font-medium leading-6 text-ink hover:text-accent">{item.title}<ExternalLink size={13} className="ml-2 inline" /></SourceLink>
         <p className="my-3 whitespace-pre-wrap break-words text-sm leading-6 text-ink-muted">{item.note || '还没有备注。记下创作角度或需要核实的信息。'}</p>
         <div className="flex flex-wrap gap-2"><Button size="sm" disabled={busy} onClick={() => { setEditing(item); setNote(item.note); setNoteError(''); setConflict(false); }}><StickyNote size={14} />编辑备注</Button><Button size="sm" variant="ghost" disabled={busy || !favoritesReady} onClick={() => void toggle(item)}>取消收藏</Button></div>
       </article>)}</div> : <div className="rounded-xl border border-dashed border-line p-10 text-center"><Bookmark className="mx-auto mb-3 text-ink-muted" size={28} /><h2 className="font-semibold text-ink">{favorites.length ? '没有匹配的收藏' : '还没有选题收藏'}</h2><p className="mt-2 text-sm text-ink-muted">{favorites.length ? '调整来源或搜索词，查看其它收藏。' : '在平台热榜点击书签，保存感兴趣的话题；下榜后仍会保留。'}</p></div>}

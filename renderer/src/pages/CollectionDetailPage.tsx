@@ -307,7 +307,7 @@ export function CollectionDetailPage() {
       setSkillProgress({ stage: 'done', message: result.message, progress: 100 });
       await refresh();
     } catch (err: any) {
-      const message = err.response?.data?.message || err.message || 'Skill 生成失败';
+      const message = err.response?.data?.message || err.message || '技能生成失败';
       setSkillError(message);
       setSkillProgress((previous) => ({
         stage: 'error',
@@ -344,7 +344,7 @@ export function CollectionDetailPage() {
       const data = await apiClient.getSkillContent(collection.id);
       setSkillContentData(data);
     } catch (err: any) {
-      setError(err.response?.data?.message || '读取 Skill 失败');
+      setError(err.response?.data?.message || '读取技能失败');
     } finally {
       setViewingSkill(false);
     }
@@ -551,7 +551,7 @@ export function CollectionDetailPage() {
           */}
           {collection.childJobProgress.transcribed > 0 && (
             <div className="mt-4 border-t border-line pt-3">
-              <p className="mb-2 text-xs font-medium text-ink-muted">内容与 Skill</p>
+              <p className="mb-2 text-xs font-medium text-ink-muted">内容与技能</p>
               <div className="flex flex-wrap items-center gap-3">
               <Button
                 variant="success"
@@ -1060,7 +1060,7 @@ function SkillGenModal({
 
   // Progress phase labels
   const productLabelMap: Record<string, string> = {
-    enhanced_skill_md: "增强 SKILL.md",
+    enhanced_skill_md: "增强技能文档",
     knowledge_base: "结构化知识库",
     case_library: "案例库",
     quotes_collection: "金句合集",
@@ -1074,7 +1074,7 @@ function SkillGenModal({
       open
       onClose={onClose}
       size="md"
-      ariaLabel={existingSkill ? '更新 Skill' : '生成 Skill'}
+      ariaLabel={existingSkill ? '更新技能' : '生成技能'}
       bodyClassName="p-0"
       hideClose
       busy={generating}
@@ -1086,7 +1086,7 @@ function SkillGenModal({
           <div className="flex items-center gap-2">
             <Brain size={20} className="text-ai" />
             <h2 className="text-lg font-semibold text-ink">
-              {existingSkill ? '更新 Skill' : '生成 Skill'}
+              {existingSkill ? '更新技能' : '生成技能'}
             </h2>
             {existingSkill && (
               <span className="text-xs text-ink-muted">
@@ -1145,7 +1145,7 @@ function SkillGenModal({
                   {progress.stage === 'retrying' && '正在重试当前 AI 请求'}
                   {progress.stage === 'analyze' && '阶段 2/3：汇总提炼结果'}
                   {progress.stage === 'planned' && '阶段 2/3：分析完成'}
-                  {progress.stage === 'generating' && '阶段 3/3：生成 Skill 产物'}
+                  {progress.stage === 'generating' && '阶段 3/3：生成技能产物'}
                   {progress.stage === 'generating_item' && `阶段 3/3：${progress.itemLabel || '生成中…'}`}
                   {progress.stage === 'item_done' && `阶段 3/3：${progress.itemLabel || ''} ✓`}
                   {progress.stage === 'item_failed' && `阶段 3/3：${progress.itemLabel || ''} ✗`}
@@ -1187,7 +1187,7 @@ function SkillGenModal({
                 <div className="text-xs space-y-1 pt-1 border-t border-line">
                   <p className="font-medium text-ink mb-1">将生成以下产物：</p>
                   <div className="grid grid-cols-2 gap-1">
-                    <PlannedItem label="增强 SKILL.md" active icon="·" />
+                    <PlannedItem label="增强技能文档" active icon="·" />
                     {Object.entries(progress.generates).map(([key, val]) => (
                       <PlannedItem
                         key={key}
@@ -1300,7 +1300,7 @@ function SkillGenModal({
             ) : (
               <>
                 <Brain size={14} />
-                {existingSkill ? '更新 Skill' : '生成 Skill'}
+                {existingSkill ? '更新技能' : '生成技能'}
               </>
             )}
           </button>

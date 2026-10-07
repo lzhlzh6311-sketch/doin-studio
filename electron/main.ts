@@ -6,6 +6,7 @@ import { registerStorageHandlers } from './handlers/storage-handler';
 import { registerAppHandlers } from './handlers/app-handler';
 import { rendererTrustOptions } from './ipc-guard';
 import { isSafeExternalUrl, isTrustedRendererUrl } from './utils/window-security';
+import { attachContextMenu, installAppMenu } from './menu';
 
 // 禁用硬件加速，避免某些系统的兼容性问题
 app.disableHardwareAcceleration();
@@ -42,6 +43,7 @@ function hardenWebContents(contents: WebContents) {
   contents.on('will-navigate', guard);
   contents.on('will-redirect', guard);
   contents.on('will-attach-webview', (event) => event.preventDefault());
+  attachContextMenu(contents);
 }
 
 app.on('web-contents-created', (_event, contents) => hardenWebContents(contents));
@@ -139,6 +141,7 @@ async function createWindow() {
 
 // 应用准备就绪
 app.whenReady().then(() => {
+  installAppMenu();
   // 本应用不需要摄像头、麦克风、定位等权限；只放行复制按钮与视频全屏用到的两项。
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
     callback(permission === 'clipboard-sanitized-write' || permission === 'fullscreen');

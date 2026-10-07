@@ -3,11 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { CommandError, runCommand } from "./command.js";
 import type { TranscriptSegment, TranscriptWord } from "../types.js";
+import type { WhisperModelManager } from "./whisper-model.js";
 
 export interface AsrServiceConfig {
   rootDir?: string;
   whisperCliPath?: string;
   whisperModelPath?: string;
+  /** 提供时模型按需下载：第一次转录前自动拉取，不再要求安装包自带。 */
+  modelManager?: WhisperModelManager;
   commandRunner?: AsrCommandRunner;
 }
 
@@ -42,6 +45,7 @@ export class AsrService {
   private readonly whisperCliPath: string;
   private readonly whisperModelPath: string;
   private readonly runner: AsrCommandRunner;
+  private readonly modelManager?: WhisperModelManager;
 
   constructor(config: AsrServiceConfig = {}) {
     const whisperRoot = getWhisperRoot(config.rootDir);
@@ -51,13 +55,20 @@ export class AsrService {
     this.whisperModelPath =
       firstNonBlank(config.whisperModelPath, process.env.WHISPER_MODEL_PATH) ??
       path.join(whisperRoot, "models", `${MODEL}.bin`);
+    this.modelManager = config.modelManager;
     this.runner = config.commandRunner ?? {
       run: runCommand
     };
   }
 
+  /** 模型默认路径（未配置按需下载时也用它判断是否就绪）。 */
+  get defaultModelPath() {
+    return this.whisperModelPath;
+  }
+
   async transcribe(audioPath: string): Promise<TranscriptResult | null> {
-    await this.assertResources(audioPath);
+    const modelPath = this.modelManager ? await this.modelManager.ensure() : this.whisperModelPath;
+    await this.assertResources(audioPath, modelPath);
 
     const workDir = await mkdtemp(path.join(tmpdir(), "douyin-whisper-"));
     const outputPrefix = path.join(workDir, "transcript");
@@ -67,7 +78,7 @@ export class AsrService {
           this.whisperCliPath,
           [
             "-m",
-            this.whisperModelPath,
+            modelPath,
             "-f",
             audioPath,
             "-l",
@@ -108,18 +119,18 @@ export class AsrService {
     }
   }
 
-  private async assertResources(audioPath: string) {
+  private async assertResources(audioPath: string, modelPath: string) {
     const missing: string[] = [];
     await access(this.whisperCliPath).catch(() => missing.push(`whisper-cli: ${this.whisperCliPath}`));
-    await access(this.whisperModelPath).catch(() => missing.push(`ggml-small: ${this.whisperModelPath}`));
+    await access(modelPath).catch(() => missing.push(`ggml-small: ${modelPath}`));
     await access(audioPath).catch(() => missing.push(`audio: ${audioPath}`));
 
     if (missing.length) {
       throw new Error(
         [
-          "内置 Whisper 资源缺失或损坏，无法执行本地转录。",
+          "语音转录组件缺失或损坏，无法执行本地转录。",
           ...missing,
-          "请重新运行 npm run prepare:whisper 后重新打包，或重新安装完整应用。"
+          "请重新安装应用；若是语音模型缺失，可在「设置 → 语音转录」重新下载。"
         ].join("\n")
       );
     }
@@ -132,16 +143,16 @@ async function readWhisperJson(outputPrefix: string) {
     return JSON.parse(await readFile(jsonPath, "utf8")) as unknown;
   } catch (error) {
     if (!isMissingFileError(error)) {
-      const message = error instanceof Error ? error.message : "invalid JSON";
-      throw new Error(`whisper.cpp 转录失败：JSON 输出格式无效。\n${message}`);
+      const message = error instanceof Error ? error.message : "JSON 格式无效";
+      throw new Error(`语音转录失败：JSON 输出格式无效。\n${message}`);
     }
   }
 
   try {
     return JSON.parse(await readFile(outputPrefix, "utf8")) as unknown;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "missing whisper.cpp JSON output";
-    throw new Error(`whisper.cpp 转录失败：未生成 JSON 输出。\n${message}`);
+    const message = error instanceof Error ? error.message : "没有生成转录结果文件";
+    throw new Error(`语音转录失败：未生成 JSON 输出。\n${message}`);
   }
 }
 
@@ -255,12 +266,12 @@ function toFiniteNumber(value: unknown) {
 
 function decorateWhisperError(error: unknown) {
   if (error instanceof CommandError) {
-    const detail = firstNonBlank(error.stderr, error.stdout, error.message) ?? "whisper.cpp command failed";
-    return new Error(`whisper.cpp 转录失败：${detail}`);
+    const detail = firstNonBlank(error.stderr, error.stdout, error.message) ?? "转录程序异常退出";
+    return new Error(`语音转录失败：${detail}`);
   }
 
   const message = error instanceof Error ? error.message : String(error);
-  return new Error(`whisper.cpp 转录失败：${message}`);
+  return new Error(`语音转录失败：${message}`);
 }
 
 function getWhisperRoot(rootDir?: string) {

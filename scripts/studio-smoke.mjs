@@ -36,6 +36,8 @@ async function snapshot(name, route, size) {
   await page.setViewportSize(size);
   await page.goto(base + route);
   await page.locator('h1').first().waitFor();
+  // 页面按需加载：等分块脚本和首屏请求都落地再截图
+  await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(350);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
   assert.equal(overflow, false, `${name} overflows at ${size.width}px`);
@@ -45,7 +47,7 @@ async function createFromUI(title, videoID) {
   await page.goto(base);
   await page.getByRole('button', { name: '创建作品', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByPlaceholder('https://www.douyin.com/video/...').fill(`https://www.douyin.com/video/${videoID}`);
+  await dialog.getByLabel('抖音视频链接').fill(`https://www.douyin.com/video/${videoID}`);
   await dialog.locator('input[placeholder^="例如："]').fill(title);
   await dialog.getByRole('button', { name: '创建任务', exact: true }).click();
   await page.waitForURL(/\/jobs\//);
@@ -68,10 +70,29 @@ try {
   await page.reload();
   await page.getByRole('heading', { name: '第二件商品：保留所选作品，刷新后仍然正确', exact: true }).waitFor();
   checks.push('UI creates two real persisted manual jobs without an AI key; second detail survives refresh');
+
+  // 易用性：开始面板、?create= 预填链接、粘贴整段分享口令只留链接、Ctrl+N 打开新建
+  await page.goto(base);
+  await page.getByTestId('quickstart-panel').waitFor();
+  await page.goto(`${base}/?create=${encodeURIComponent('https://v.douyin.com/smoke123/')}`);
+  const prefilled = page.getByRole('dialog').getByLabel('抖音视频链接');
+  await prefilled.waitFor();
+  assert.equal(await prefilled.inputValue(), 'https://v.douyin.com/smoke123/');
+  await prefilled.fill('7.43 复制打开抖音，看看【作品】 https://v.douyin.com/paste456/ Dbg:/ 08/12');
+  assert.equal(await prefilled.inputValue(), 'https://v.douyin.com/paste456/');
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  await page.keyboard.press('Control+n');
+  await page.getByRole('dialog').getByLabel('抖音视频链接').waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  await page.goto(`${base}/settings?section=advanced`);
+  await page.getByTestId('convenience-settings').waitFor();
+  checks.push('Quick start panel, ?create= prefill, share-text paste cleanup, Ctrl+N and convenience settings work');
   await page.goto(base);
   await page.getByRole('button', { name: '卡片视图', exact: true }).click();
   await page.getByRole('link', { name: '打开作品：第二件商品：保留所选作品，刷新后仍然正确' }).click();
-  assert.equal(new URL(page.url()).pathname, `/jobs/${second}`);
+  await page.waitForURL(url => new URL(url).pathname === `/jobs/${second}`);
   checks.push('New visual cards navigate to the selected job');
 
   const session = await (await fetch(`${base}/api/local-sessions/auto`, { method: 'POST' })).json();
@@ -86,7 +107,7 @@ try {
   checks.push('Real multipart image upload remains in the asset library after refresh');
 
   await page.goto(`${base}/hotspots`);
-  const related = page.getByRole('link', { name: '在抖音查找相关视频 ↗' }).first();
+  const related = page.getByRole('link', { name: '找相关抖音视频做二创 ↗' }).first();
   await related.waitFor();
   assert.match(await related.getAttribute('href'), /^https:\/\/www\.douyin\.com\/search\//);
   await page.getByRole('button', { name: /^收藏：/ }).first().click();
@@ -113,6 +134,9 @@ try {
   await writeFile(path.join(root, 'artifacts', 'browser-report.json'), JSON.stringify({ passed: true, checks, sizes, routes, externalAI: 'not called', platformPublishing: 'not called' }, null, 2));
   console.log(JSON.stringify({ passed: true, checks, screenshots: 'artifacts/screenshots' }));
 } catch (error) {
+  // 写成 Actions 注解，未登录也能在运行摘要页看到失败原因
+  const detail = `${String(error)} | url=${page.url()} | pageErrors=${JSON.stringify(errors)} | passed=${checks.length}`;
+  console.log(`::error title=studio-smoke::${detail.slice(0, 1500).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
   await page.screenshot({ path: path.join(evidence, 'failure.png'), fullPage: true }).catch(() => {});
   await writeFile(path.join(root, 'artifacts', 'failure.html'), await page.content()).catch(() => {});
   await writeFile(path.join(root, 'artifacts', 'browser-report.json'), JSON.stringify({ passed: false, checks, url: page.url(), errors, error: String(error) }, null, 2));

@@ -177,7 +177,7 @@ export class HyperframesVideoGenerator {
       });
       const rendered = await stat(stagingVideoPath).catch(() => null);
       if (!rendered || rendered.size <= 0) {
-        throw new Error("HyperFrames render completed but video.mp4 was not created");
+        throw new Error("视频渲染结束但没有生成成片文件，请重试");
       }
 
       await onProgress?.({ phase: "verifying", progress: 95 });
@@ -249,7 +249,7 @@ export class HyperframesVideoGenerator {
 
   private async ensureEnvironment(signal?: AbortSignal) {
     const major = Number(process.versions.node.split(".")[0]);
-    if (!Number.isFinite(major) || major < 22) throw this.dependencyError(`current Node.js is ${process.version}`);
+    if (!Number.isFinite(major) || major < 22) throw this.dependencyError(`当前 Node.js 版本为 ${process.version}，需要 22 或更高`);
     try {
       const result = await this.runHyperframes(["doctor", "--json"], {
         cwd: this.options.storageRoot,

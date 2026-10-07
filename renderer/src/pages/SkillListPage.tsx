@@ -59,7 +59,7 @@ export function SkillListPage() {
       const data = await apiClient.getSkills();
       setSkills(data.skills || []);
     } catch (err: any) {
-      setError(err.response?.data?.message || '加载 Skill 列表失败');
+      setError(err.response?.data?.message || '加载技能列表失败');
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +75,7 @@ export function SkillListPage() {
       const data = await apiClient.getSkillContent(collectionId);
       setSkillContent(data);
     } catch (err: any) {
-      setActionError(err.response?.data?.message || '读取 Skill 失败');
+      setActionError(err.response?.data?.message || '读取技能失败');
     } finally {
       setViewingSkill(false);
     }
@@ -88,7 +88,7 @@ export function SkillListPage() {
       setDeleteConfirm(null);
       await refresh();
     } catch (err: any) {
-      setActionError(err.response?.data?.message || '删除 Skill 失败');
+      setActionError(err.response?.data?.message || '删除技能失败');
     } finally {
       setDeletingId(null);
     }
@@ -134,7 +134,7 @@ export function SkillListPage() {
             Skill 管理
           </span>
         }
-        description="从合集转录文本蒸馏的结构化知识库，可在 Claude Code 中作为 Skill 使用"
+        description="从合集转录文本蒸馏的结构化知识库，可导出到 Claude Code 作为技能使用"
         actions={
           <Button variant="outline" onClick={refresh}>
             <RefreshCw size={14} aria-hidden="true" />
@@ -291,8 +291,8 @@ export function SkillListPage() {
                 {deleteConfirm === skill.collectionId && (
                   <ConfirmDialog
                     open={true}
-                    title="确认删除 Skill？"
-                    description={`Skill「${skill.skillName}」将从本地删除，合集不受影响。`}
+                    title="确认删除技能？"
+                    description={`技能「${skill.skillName}」将从本地删除，合集不受影响。`}
                     confirmLabel="删除"
                     tone="danger"
                     busy={deletingId === skill.collectionId}

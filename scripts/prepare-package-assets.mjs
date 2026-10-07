@@ -65,6 +65,10 @@ const whisperDir = path.join(targetDir, "whisper");
 const hyperframesDir = path.join(targetDir, "hyperframes");
 const browserDir = path.join(targetDir, "browser");
 
+// 语音模型（~466 MB）默认不打进安装包，应用在第一次转录时按需下载。
+// 需要离线安装包时设 BUNDLE_WHISPER_MODEL=1。
+const bundleWhisperModel = process.env.BUNDLE_WHISPER_MODEL === "1";
+
 await mkdir(binDir, { recursive: true });
 await mkdir(path.join(whisperDir, "models"), { recursive: true });
 
@@ -103,7 +107,11 @@ async function ensureYtDlp() {
 
 async function ensureWhisper() {
   const modelPath = path.join(whisperDir, "models", "ggml-small.bin");
-  await ensureModel(modelPath);
+  if (bundleWhisperModel) {
+    await ensureModel(modelPath);
+  } else {
+    await rm(modelPath, { force: true });
+  }
 
   if (target.platform === "win32") {
     await ensureWindowsWhisper();
@@ -270,7 +278,7 @@ async function stagePackageAssets() {
       ffprobe: `bin/${target.bin.ffprobe}`,
       ytdlp: `bin/${target.bin.ytdlp}`,
       whisperCli: target.platform === "win32" ? "whisper/whisper-cli.exe" : "whisper/whisper-cli",
-      whisperModel: "whisper/models/ggml-small.bin",
+      ...(bundleWhisperModel ? { whisperModel: "whisper/models/ggml-small.bin" } : {}),
       hyperframesCli: "hyperframes/node_modules/hyperframes/dist/cli.js",
       hyperframesBrowser: `browser/${browserRelativePath}`
     }

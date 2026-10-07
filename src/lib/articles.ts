@@ -25,7 +25,7 @@ const object = (value: unknown): Record<string, any> => {
 };
 export type ArticlePackageInput = { article: ArticleRecord; draft: NonNullable<ArticleRecord['draft']>; html: string; cover: ResolvedAssetFile; images: ResolvedAssetFile[]; hashes: string[]; actor: ActorSnapshot };
 type Deps = {
-  storage: LocalStorage; writer: Pick<ArticleWritingService, 'run'>;
+  storage: LocalStorage; writer: { run(step: ArticleStep, article: ArticleRecord, signal?: AbortSignal): Promise<any> };
   readSource?: typeof readArticleSource;
   resolveHotspot?: (sourceId: string, itemId: string) => Promise<ArticleRecord['hotspot']>;
   resolveAsset?: (id: string) => Promise<ResolvedAssetFile | null>;
@@ -186,11 +186,18 @@ export class ArticleService {
     if (a.steps.draft !== 'succeeded') throw new ArticleError(422,'请先完成初稿');
     if (step === 'illustrations' && (!a.reviewed || a.steps.review !== 'succeeded')) throw new ArticleError(422,'请先完成审校并人工确认定稿');
   }
-  async run(id: string, step: ArticleStep, version: unknown): Promise<ArticleRecord> {
+  /**
+   * 跑一个写作步骤。`signal` 由路由在客户端断开（用户点「取消」或离开页面）时触发：
+   * 此时中止 AI 请求、把步骤恢复成开始前的状态，不记失败、不扣下一次的额度。
+   */
+  async run(id: string, step: ArticleStep, version: unknown, signal?: AbortSignal): Promise<ArticleRecord> {
     if (!ARTICLE_STEPS.includes(step)) throw new ArticleError(400,'写作步骤无效');
-    const snapshot = await this.serial(async () => { const a = await this.record(id); this.editable(a,version); this.guard(a,step); a.running = step; a.steps[step] = 'running'; delete a.error; return this.persist(a); });
+    if (signal?.aborted) throw new ArticleError(499,'已取消生成','article_cancelled');
+    let previous: ArticleRecord['steps'][ArticleStep] | undefined;
+    const snapshot = await this.serial(async () => { const a = await this.record(id); this.editable(a,version); this.guard(a,step); previous = a.steps[step]; a.running = step; a.steps[step] = 'running'; delete a.error; return this.persist(a); });
     try {
-      const result = await this.deps.writer.run(step,snapshot);
+      const result = await this.deps.writer.run(step,snapshot,signal);
+      if (signal?.aborted) throw new DOMException('cancelled','AbortError');
       return await this.serial(async () => {
         const a = await this.record(id); const next = ARTICLE_STEPS[ARTICLE_STEPS.indexOf(step)+1]; if (next) this.invalidate(a,next);
         if (step === 'diagnose') { a.topics = result.topics; delete a.selectedTopic; }
@@ -202,6 +209,10 @@ export class ArticleService {
         a.steps[step] = 'succeeded'; delete a.running; return this.persist(a);
       });
     } catch (error) {
+      if (signal?.aborted) {
+        await this.serial(async () => { const a = await this.record(id); if (a.running === step) delete a.running; if (a.steps[step] === 'running') a.steps[step] = previous ?? 'pending'; return this.persist(a); });
+        throw new ArticleError(499,'已取消生成','article_cancelled');
+      }
       await this.serial(async () => { const a = await this.record(id); delete a.running; a.steps[step] = 'failed'; a.error = '生成失败：请检查 AI 配置、资料与输出格式后重试'; return this.persist(a); });
       throw new ArticleError(422, error instanceof ArticleError ? error.message : '生成失败：请检查 AI 配置、资料与输出格式后重试');
     }

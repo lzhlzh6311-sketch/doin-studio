@@ -969,7 +969,8 @@ export class JobStore {
   async get(id: string) {
     await this.purgeExpiredTrash();
     const index = await this.readIndex();
-    return index[id] ?? null;
+    // Object.hasOwn：`__proto__`、`constructor` 这类 id 不能命中原型链上的属性。
+    return Object.hasOwn(index, id) ? index[id] : null;
   }
 
   async list() {

@@ -62,3 +62,12 @@ test("CollectionStore keeps a crawled cover URL when creating child jobs", async
   await collections.createChildJobs("collection", ["video-1"]);
   assert.equal(capturedInputs[0]?.coverUrl, "https://cdn.example.com/video-1.jpg");
 });
+
+test("CollectionStore.get does not resolve prototype keys as collections", async () => {
+  const storage = new LocalStorage(await mkdtemp(path.join(tmpdir(), "collections-proto-")));
+  const collections = new CollectionStore(storage, { async create() { throw new Error("unused"); }, async get() { return null; } } as never);
+  await collections.init();
+  for (const id of ["__proto__", "constructor", "toString", "hasOwnProperty"]) {
+    assert.equal(await collections.get(id), null, id);
+  }
+});

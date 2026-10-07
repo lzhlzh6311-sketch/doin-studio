@@ -1,4 +1,5 @@
-import { ipcMain, app, safeStorage } from 'electron';
+import { app, safeStorage } from 'electron';
+import { handleTrusted } from '../ipc-guard';
 import fs from 'fs/promises';
 import path from 'path';
 import { resolve4, resolve6 } from 'dns/promises';
@@ -280,36 +281,36 @@ async function setActiveApiKey(keyId: string): Promise<void> {
 
 // 注册 IPC 处理器
 export function registerConfigHandlers(): void {
-  ipcMain.handle('get-config', async () => {
+  handleTrusted('get-config', async () => {
     const config = await loadConfig();
     return { ...config, wechatMp: publicWechatSettings(config.wechatMp) };
   });
 
-  ipcMain.handle('save-config', async (_, config: Partial<AppConfig>) => {
+  handleTrusted('save-config', async (_, config: Partial<AppConfig>) => {
     await saveConfig(config);
   });
 
-  ipcMain.handle('test-api-key', async (_, keyConfig: AIKeyInput) => {
+  handleTrusted('test-api-key', async (_, keyConfig: AIKeyInput) => {
     return await testApiKey(keyConfig);
   });
 
-  ipcMain.handle('add-api-key', async (_, keyConfig: AIKeyInput) => {
+  handleTrusted('add-api-key', async (_, keyConfig: AIKeyInput) => {
     return await addApiKey(keyConfig);
   });
 
-  ipcMain.handle('update-api-key', async (_, keyId: string, changes: AIKeyChanges) => {
+  handleTrusted('update-api-key', async (_, keyId: string, changes: AIKeyChanges) => {
     await updateApiKey(keyId, changes);
   });
 
-  ipcMain.handle('retest-api-key', async (_, keyId: string) => {
+  handleTrusted('retest-api-key', async (_, keyId: string) => {
     return await retestApiKey(keyId);
   });
 
-  ipcMain.handle('remove-api-key', async (_, keyId: string) => {
+  handleTrusted('remove-api-key', async (_, keyId: string) => {
     await removeApiKey(keyId);
   });
 
-  ipcMain.handle('set-active-api-key', async (_, keyId: string) => {
+  handleTrusted('set-active-api-key', async (_, keyId: string) => {
     await setActiveApiKey(keyId);
   });
 }

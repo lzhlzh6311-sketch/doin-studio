@@ -32,6 +32,7 @@ import { JobInputError, JobStepError, JobStore } from "./lib/jobs.js";
 import { CollectionStore } from "./lib/collections.js";
 import { registerConfigRoutes } from "./lib/config-server.js";
 import { createLocalOriginGuard } from "./lib/local-origin-guard.js";
+import { catchAsyncRouteErrors } from "./lib/async-routes.js";
 import { HyperframesVideoGenerator } from "./lib/hyperframes-video.js";
 import { simplifyChineseValue } from "./lib/chinese.js";
 import { buildSkillContext, getSkillErrorMessage, isRetryableSkillError } from "./lib/skill-generation.js";
@@ -150,6 +151,8 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   await localUsers.init();
   const localSessions = new LocalSessionStore(localUsers);
   const app = express();
+  // 必须在注册任何路由之前：async 路由的拒绝统一交给兜底错误处理（Express 4 不会自己接住）。
+  catchAsyncRouteErrors(app);
   app.disable("x-powered-by");
   // 来源守卫必须先于一切路由：回环 Host、回环 Origin、可选的本机令牌（取代早先的 `ACAO: *`）。
   app.use(createLocalOriginGuard({ apiToken: config.apiToken, allowOpaqueOrigin: config.allowOpaqueOrigin }));

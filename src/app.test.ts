@@ -1135,6 +1135,21 @@ test("a web page on another origin cannot open a local session or read config", 
   }
 });
 
+test("job creation rejects non-http sources with 400 instead of passing them to yt-dlp", async () => {
+  const fixture = await appFixture();
+  try {
+    const response = await fetch(`${fixture.baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceUrl: "--exec=touch /tmp/pwned" }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).message, /http/);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("unexpected route errors return safe JSON without stack traces", async () => {
   const fixture = await appFixture();
   try {

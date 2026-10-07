@@ -28,7 +28,7 @@ import { registerGalleryRoutes } from "./lib/gallery-routes.js";
 import { HotspotService } from "./lib/hotspots.js";
 import { registerHotspotRoutes } from "./lib/hotspot-routes.js";
 import { sendRangeResponse } from "./lib/range-response.js";
-import { JobStepError, JobStore } from "./lib/jobs.js";
+import { JobInputError, JobStepError, JobStore } from "./lib/jobs.js";
 import { CollectionStore } from "./lib/collections.js";
 import { registerConfigRoutes } from "./lib/config-server.js";
 import { createLocalOriginGuard } from "./lib/local-origin-guard.js";
@@ -500,7 +500,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "job create failed";
-      res.status(500).json({ message });
+      res.status(error instanceof JobInputError ? 400 : 500).json({ message });
     }
   });
 

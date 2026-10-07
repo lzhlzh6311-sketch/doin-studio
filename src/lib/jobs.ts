@@ -75,6 +75,26 @@ type ParsedShare = NonNullable<ReturnType<typeof parseDouyinShare>>;
 type PageInfoRecord = DouyinPageInfo & { errorMessage?: string };
 type PermanentDeleteResult = "deleted" | "not_found" | "active" | "not_in_trash";
 
+/** 创建任务时的输入错误（应回 400，而不是 500）。 */
+export class JobInputError extends Error {
+  readonly status = 400;
+}
+
+/**
+ * 只接受 http/https 链接作为视频来源。
+ * 来源会作为最后一个参数交给 yt-dlp：以 `-` 开头的「链接」会被当成选项解析（例如 `--exec`
+ * 能执行任意命令），所以在入库前就拒掉；下载时另有 `--` 分隔兜底。
+ */
+export function isHttpSourceUrl(value: string): boolean {
+  if (!/^https?:\/\//iu.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export class JobStepError extends Error {
   constructor(message: string, readonly statusCode = 400, readonly job?: JobRecord) {
     super(message);
@@ -177,6 +197,9 @@ export class JobStore {
     const sourceUrl = input.sourceUrl ?? parsed?.sourceUrl ?? "";
     if (!sourceUrl) {
       throw new Error("sourceUrl or shareText with url is required");
+    }
+    if (!isHttpSourceUrl(sourceUrl)) {
+      throw new JobInputError("视频链接必须是 http(s) 地址");
     }
     const topic = input.topic ?? parsed?.topicCandidate ?? "skills分享";
     const id = randomUUID();

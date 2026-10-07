@@ -11,6 +11,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { OnlineAudioPanel } from '../components/OnlineAudioPanel';
 import { apiClient } from '../services/api';
 import type { AssetKind, AssetRecord } from '../types';
+import { blockedNavigationAction } from '../utils/navigationGuards';
 
 const IMAGE_ACCEPT = '.jpg,.jpeg,.png,.webp';
 const AUDIO_ACCEPT = '.mp3,.wav,.m4a,.aac';
@@ -55,7 +56,8 @@ export function AssetsPage() {
   const protectedBusy = promptGuard.busy || editorGuard.busy;
   const protectedDirty = promptGuard.dirty || editorGuard.dirty;
   const blocker = useBlocker(protectedDirty || protectedBusy);
-  useEffect(() => { if (blocker.state === 'blocked') { if (!protectedBusy && window.confirm('图片编辑尚未保存，放弃并离开？')) blocker.proceed(); else blocker.reset(); } }, [blocker, protectedBusy]);
+  // 与文章页同一份判定（navigationGuards）：忙时确认后也能离开，绝不把用户锁在页面里。
+  useEffect(() => { if (blocker.state !== 'blocked') return; if (blockedNavigationAction({ busy: protectedBusy, dirty: protectedDirty, dirtyMessage: '图片编辑尚未保存，放弃并离开？', confirm: message => window.confirm(message) }) === 'proceed') blocker.proceed(); else blocker.reset(); }, [blocker, protectedBusy, protectedDirty]);
   useEffect(() => { if (!protectedDirty && !protectedBusy) return; const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; }; window.addEventListener('beforeunload', guard); return () => window.removeEventListener('beforeunload', guard); }, [protectedDirty, protectedBusy]);
   const imageRequestId = useRef(0);
   const imageInput = useRef<HTMLInputElement>(null);

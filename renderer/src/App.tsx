@@ -10,8 +10,17 @@ import { useOperatorStore } from './store/operator';
  * 除首页外的页面都按需加载：启动只解析首页需要的代码，其余页面第一次打开时再取，
  * 各自一个小文件（打包后均在本机，切换几乎无感）。
  */
+const pageLoaders: Array<() => Promise<unknown>> = [];
 function page<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) {
+  pageLoaders.push(load);
   return async () => ({ Component: (await load())[name] });
+}
+
+/** 首页画完后趁空闲把其余页面预取进缓存，之后切页不用等。 */
+function prefetchPages() {
+  const run = () => { for (const load of pageLoaders) void load().catch(() => { /* 真正打开时再试 */ }); };
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
+  if (idle) idle(run); else setTimeout(run, 1500);
 }
 
 const router = createAppRouter([{
@@ -43,6 +52,7 @@ function AppContent() {
   useEffect(() => {
     if (initializationStarted.current) return;
     initializationStarted.current = true;
+    prefetchPages();
     // 本机操作者会话失败时 store 会降级为「未就绪」，不会 reject，
     // 因此这里不再有初始化失败分支：应用照常进入，缺会话的操作会各自提示重试。
     void initialize();

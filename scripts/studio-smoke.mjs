@@ -90,7 +90,7 @@ try {
   await page.goto(base);
   await page.getByRole('button', { name: '卡片视图', exact: true }).click();
   await page.getByRole('link', { name: '打开作品：第二件商品：保留所选作品，刷新后仍然正确' }).click();
-  assert.equal(new URL(page.url()).pathname, `/jobs/${second}`);
+  await page.waitForURL(url => new URL(url).pathname === `/jobs/${second}`);
   checks.push('New visual cards navigate to the selected job');
 
   const session = await (await fetch(`${base}/api/local-sessions/auto`, { method: 'POST' })).json();

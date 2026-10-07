@@ -132,7 +132,7 @@
         "to": "runtime-assets-manifest.json"
       }
     ],
-    "appId": "dev.sakuralaaa.doinstudio",
+    "appId": "dev.lzhlzh6311.doinstudio",
     "productName": "Doin Studio",
     "directories": {
       "output": "release"

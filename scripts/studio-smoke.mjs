@@ -102,7 +102,7 @@ try {
   await page.getByRole('button', { name: '更多', exact: true }).click();
   await page.getByRole('dialog').getByRole('link', { name: '设置与环境' }).click();
   await page.waitForURL(/\/settings/);
-  assert.equal(await page.getByRole('dialog').count(), 0);
+  await page.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 });
   await page.getByLabel('界面主题').selectOption('light');
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   await page.screenshot({ path: path.join(evidence, 'mobile-light-settings.png'), fullPage: true });

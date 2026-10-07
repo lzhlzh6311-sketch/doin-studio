@@ -195,8 +195,9 @@ export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
   // 确保目录存在
   await fs.mkdir(path.dirname(configPath), { recursive: true });
 
-  // 写入配置文件
-  await fs.writeFile(configPath, JSON.stringify(configToSave, null, 2), 'utf-8');
+  // 写入配置文件：只给当前用户读写（系统钥匙串不可用时 Key 会以明文落盘，至少不让其他用户读到）。
+  await fs.writeFile(configPath, JSON.stringify(configToSave, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  await fs.chmod(configPath, 0o600).catch(() => undefined);
 }
 
 // 添加 API Key

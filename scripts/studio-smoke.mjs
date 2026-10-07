@@ -36,6 +36,8 @@ async function snapshot(name, route, size) {
   await page.setViewportSize(size);
   await page.goto(base + route);
   await page.locator('h1').first().waitFor();
+  // 页面按需加载：等分块脚本和首屏请求都落地再截图
+  await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(350);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
   assert.equal(overflow, false, `${name} overflows at ${size.width}px`);
@@ -132,6 +134,9 @@ try {
   await writeFile(path.join(root, 'artifacts', 'browser-report.json'), JSON.stringify({ passed: true, checks, sizes, routes, externalAI: 'not called', platformPublishing: 'not called' }, null, 2));
   console.log(JSON.stringify({ passed: true, checks, screenshots: 'artifacts/screenshots' }));
 } catch (error) {
+  // 写成 Actions 注解，未登录也能在运行摘要页看到失败原因
+  const detail = `${String(error)} | url=${page.url()} | pageErrors=${JSON.stringify(errors)} | passed=${checks.length}`;
+  console.log(`::error title=studio-smoke::${detail.slice(0, 1500).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
   await page.screenshot({ path: path.join(evidence, 'failure.png'), fullPage: true }).catch(() => {});
   await writeFile(path.join(root, 'artifacts', 'failure.html'), await page.content()).catch(() => {});
   await writeFile(path.join(root, 'artifacts', 'browser-report.json'), JSON.stringify({ passed: false, checks, url: page.url(), errors, error: String(error) }, null, 2));

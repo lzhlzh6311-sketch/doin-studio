@@ -65,6 +65,10 @@ const whisperDir = path.join(targetDir, "whisper");
 const hyperframesDir = path.join(targetDir, "hyperframes");
 const browserDir = path.join(targetDir, "browser");
 
+// 语音模型（~466 MB）默认不打进安装包，应用在第一次转录时按需下载。
+// 需要离线安装包时设 BUNDLE_WHISPER_MODEL=1。
+const bundleWhisperModel = process.env.BUNDLE_WHISPER_MODEL === "1";
+
 await mkdir(binDir, { recursive: true });
 await mkdir(path.join(whisperDir, "models"), { recursive: true });
 
@@ -100,10 +104,6 @@ async function ensureYtDlp() {
   await download(target.ytdlpUrl, output);
   await makeExecutable(output);
 }
-
-// 语音模型（~466 MB）默认不打进安装包，应用在第一次转录时按需下载。
-// 需要离线安装包时设 BUNDLE_WHISPER_MODEL=1。
-const bundleWhisperModel = process.env.BUNDLE_WHISPER_MODEL === "1";
 
 async function ensureWhisper() {
   const modelPath = path.join(whisperDir, "models", "ggml-small.bin");

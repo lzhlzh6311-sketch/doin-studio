@@ -211,6 +211,7 @@ export function CreateJobDialog({ isOpen, onClose, initialUrl }: CreateJobDialog
               </label>
               <input
                 type="text"
+                aria-label="抖音视频链接"
                 value={sourceUrl}
                 onChange={(e) => handleUrlChange(e.target.value)}
                 placeholder="粘贴抖音链接或整段分享口令，会自动识别链接"

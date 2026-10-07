@@ -86,7 +86,7 @@ try {
   checks.push('Real multipart image upload remains in the asset library after refresh');
 
   await page.goto(`${base}/hotspots`);
-  const related = page.getByRole('link', { name: '在抖音查找相关视频 ↗' }).first();
+  const related = page.getByRole('link', { name: '找相关抖音视频做二创 ↗' }).first();
   await related.waitFor();
   assert.match(await related.getAttribute('href'), /^https:\/\/www\.douyin\.com\/search\//);
   await page.getByRole('button', { name: /^收藏：/ }).first().click();

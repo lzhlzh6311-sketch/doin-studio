@@ -135,7 +135,8 @@
     "appId": "dev.lzhlzh6311.doinstudio",
     "productName": "Doin Studio",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "win": {
       "target": [
@@ -145,7 +146,8 @@
           ],
           "target": "nsis"
         }
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "artifactName": "Doin-Studio-${version}-windows-${arch}.${ext}",
@@ -154,6 +156,9 @@
     },
     "asarUnpack": [
       "node_modules/better-sqlite3/**"
-    ]
+    ],
+    "mac": {
+      "icon": "build/icon.png"
+    }
   }
 }

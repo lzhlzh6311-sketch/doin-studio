@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   Plus,
@@ -10,6 +10,7 @@ import { Layout } from '../components/Layout';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { CreateJobDialog } from '../components/CreateJobDialog';
+import { QuickStartPanel } from '../components/QuickStartPanel';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useAppStore } from '../store';
@@ -40,6 +41,19 @@ export function JobListPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [initialUrl, setInitialUrl] = useState<string | null>(null);
+
+  // `/?create=1` 或 `/?create=<抖音链接>`：来自 Ctrl+N 快捷键和剪贴板导入提示，直接打开新建对话框。
+  useEffect(() => {
+    const create = searchParams.get('create');
+    if (create === null) return;
+    setInitialUrl(create && create !== '1' ? create : null);
+    setIsDialogOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('create');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const setJobs = useAppStore((state) => state.setJobs);
   const setServerPort = useAppStore((state) => state.setServerPort);
 
@@ -186,6 +200,8 @@ export function JobListPage() {
         }
       />
 
+      <QuickStartPanel onCreateVideo={() => { setInitialUrl(null); setIsDialogOpen(true); }} />
+
       {/* Active job strip */}
       {activeJob && (
         <div className="mb-5">
@@ -266,7 +282,8 @@ export function JobListPage() {
 
       <CreateJobDialog
         isOpen={isDialogOpen}
-        onClose={() => setIsDialogOpen(false)}
+        initialUrl={initialUrl}
+        onClose={() => { setIsDialogOpen(false); setInitialUrl(null); }}
       />
 
 

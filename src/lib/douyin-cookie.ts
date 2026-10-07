@@ -12,9 +12,9 @@
  */
 
 import pathModule from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { execSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import type { Browser, BrowserContext, Page } from "playwright";
 
 const COOKIE_DIR = pathModule.join(homedir(), ".douyin-ai-video");
@@ -34,8 +34,10 @@ export function loadCookie(): string {
 }
 
 export function saveCookie(cookie: string): void {
-  mkdirSync(COOKIE_DIR, { recursive: true });
-  writeFileSync(COOKIE_PATH, cookie.trim(), "utf-8");
+  // 登录 Cookie 等同于账号凭据：只给当前用户读写（Windows 上 mode 会被忽略）。
+  mkdirSync(COOKIE_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(COOKIE_PATH, cookie.trim(), { encoding: "utf-8", mode: 0o600 });
+  try { chmodSync(COOKIE_PATH, 0o600); } catch { /* best effort */ }
 }
 
 export function hasCookie(): boolean {
@@ -340,20 +342,37 @@ export interface CookieExtractionResult {
   };
 }
 
-function executeCookieScript(scriptContent: string): CookieExtractionResult {
-  const tmpDir = pathModule.join(tmpdir(), `douyin-cookie-${Math.random().toString(36).slice(2, 8)}`);
-  mkdirSync(tmpDir, { recursive: true });
-  const scriptPath = pathModule.join(tmpDir, "extract-cookie.mjs");
-
-  try {
-    writeFileSync(scriptPath, scriptContent, "utf-8");
-
-    const result = execSync(`node --no-warnings "${scriptPath}"`, {
-      cwd: tmpDir,
+/**
+ * 在子进程里跑 Playwright 脚本。
+ *
+ * ⚠️ 早先用 `execSync`：最长 180 秒里**整个后端事件循环被阻塞**（桌面端后端跑在主进程里，
+ * 等于整个应用卡死），而且依赖 PATH 上有 `node`（打包后通常没有）。现在改为异步执行，
+ * 用当前运行时（Electron 下以 ELECTRON_RUN_AS_NODE 充当 Node）。
+ */
+function runNodeScript(scriptPath: string, cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, ["--no-warnings", scriptPath], {
+      cwd,
       timeout: 180_000,
       encoding: "utf-8",
       maxBuffer: 10 * 1024 * 1024,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      windowsHide: true,
+    }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
     });
+  });
+}
+
+async function executeCookieScript(scriptContent: string): Promise<CookieExtractionResult> {
+  const tmpDir = mkdtempSync(pathModule.join(tmpdir(), "douyin-cookie-"));
+  const scriptPath = pathModule.join(tmpDir, "extract-cookie.mjs");
+
+  try {
+    writeFileSync(scriptPath, scriptContent, { encoding: "utf-8", mode: 0o600 });
+
+    const result = await runNodeScript(scriptPath, tmpDir);
 
     // Parse cookie
     const cookieMatch = result.match(/COOKIE_START\n([\s\S]*?)\nCOOKIE_END/);
@@ -374,8 +393,8 @@ function executeCookieScript(scriptContent: string): CookieExtractionResult {
 
     return { cookie, hasAuth: authInfo.sessionid || authInfo.sid_guard || false, authInfo };
   } finally {
+    // 早先这里用 `require("node:fs")`：本文件是 ESM，require 不存在，临时目录从未被清理。
     try {
-      const { rmSync } = require("node:fs");
       rmSync(tmpDir, { recursive: true, force: true });
     } catch { /* ignore cleanup errors */ }
   }
@@ -387,7 +406,7 @@ function executeCookieScript(scriptContent: string): CookieExtractionResult {
  */
 export async function extractCookiesViaBrowser(): Promise<string> {
   const script = buildCookieScript(false, 0);
-  const result = executeCookieScript(script);
+  const result = await executeCookieScript(script);
   console.log("[cookie] Headless extraction — auth:", result.hasAuth, "total:", result.authInfo.total);
   return result.cookie;
 }
@@ -402,7 +421,7 @@ export async function extractCookiesViaBrowser(): Promise<string> {
  */
 export async function extractCookiesWithQRLogin(loginTimeoutSec = 120): Promise<CookieExtractionResult> {
   const script = buildCookieScript(true, loginTimeoutSec);
-  const result = executeCookieScript(script);
+  const result = await executeCookieScript(script);
   if (!result.hasAuth) {
     throw new Error(
       "Login timeout: no session cookie detected after " + loginTimeoutSec + " seconds.\n" +

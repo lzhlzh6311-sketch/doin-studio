@@ -49,6 +49,9 @@ import type {
 import { parseSkillProgressLine, type SkillProgressEvent } from '../utils/skill-progress';
 
 export const ONLINE_AUDIO_BATCH_KEY = 'douyin-ai-video.online-audio-batch';
+/** 与后端 src/lib/local-origin-guard.ts 一致（渲染端不直接 import 后端模块的运行时代码）。 */
+export const API_TOKEN_HEADER = 'X-Doin-Token';
+export const API_TOKEN_QUERY = 'doin_token';
 
 /** 默认请求超时。长操作（转录、生成 Skill 等）需要很久，所以只能靠 `signal` 让用户主动取消。 */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 960_000;
@@ -138,6 +141,8 @@ export class ApiClient {
   private client: AxiosInstance | null = null;
   private serverPort: number | null = null;
   private localSessionToken: string | null = null;
+  /** 桌面端每次启动生成的本机 API 令牌（浏览器开发模式没有）。见 src/lib/local-origin-guard.ts。 */
+  private apiToken: string | null = null;
   /** 并发的 401 只触发一次重开会话（避免惊群）。 */
   private sessionRefresh: Promise<void> | null = null;
 
@@ -153,8 +158,7 @@ export class ApiClient {
   }
   async previewOnlineAudio(trackKey: string): Promise<AudioPreview & { url: string }> {
     const preview = (await this.publishingRequest<{ preview: AudioPreview }>({ url: '/api/online-audio/preview', method: 'POST', data: { trackKey }, timeout: 90_000 })).preview;
-    const client = await this.getClient();
-    return { ...preview, url: `${client.defaults.baseURL}/api/online-audio/media/${encodeURIComponent(preview.token)}` };
+    return { ...preview, url: await this.backendUrl(`/api/online-audio/media/${encodeURIComponent(preview.token)}`) };
   }
   async importOnlineAudio(trackKeys: string[]): Promise<AudioImportBatch> {
     const batch = (await this.publishingRequest<{ batch: AudioImportBatch }>({ url: '/api/online-audio/imports', method: 'POST', data: { trackKeys } })).batch;
@@ -223,8 +227,7 @@ export class ApiClient {
     return URL.createObjectURL(blob);
   }
   async getGalleryImageUrl(id: string, index: number, generation: string): Promise<string> {
-    await this.initialize();
-    return `http://localhost:${this.serverPort}/api/galleries/${id}/images/${index}?generation=${encodeURIComponent(generation)}`;
+    return this.backendUrl(`/api/galleries/${id}/images/${index}?generation=${encodeURIComponent(generation)}`);
   }
   async previewGallery(id: string, version: number): Promise<GalleryPreview> {
     return (await this.publishingRequest<{ preview: GalleryPreview }>({ method: 'POST', url: `/api/galleries/${id}/publishing/preview`, data: { version } })).preview;
@@ -238,6 +241,7 @@ export class ApiClient {
       // Electron 环境下获取后端端口，浏览器开发模式下使用 Vite 代理
       if (typeof window !== 'undefined' && window.electron?.getServerPort) {
         this.serverPort = await window.electron.getServerPort();
+        this.apiToken = window.electron.getApiToken ? await window.electron.getApiToken() : null;
       } else {
         this.serverPort = 5173; // Vite proxy port
       }
@@ -246,6 +250,9 @@ export class ApiClient {
         timeout: DEFAULT_REQUEST_TIMEOUT_MS,
       });
       this.client.interceptors.request.use((request) => {
+        if (this.apiToken) {
+          request.headers.set(API_TOKEN_HEADER, this.apiToken);
+        }
         if (this.localSessionToken) {
           request.headers.set('X-Local-Session', this.localSessionToken);
         }
@@ -267,6 +274,17 @@ export class ApiClient {
       });
     }
     return this.client!;
+  }
+
+  /**
+   * 后端资源的**绝对** URL（给 `<img>`/`<video>`/下载链接/EventSource 用）。
+   * 这些请求带不了自定义头，所以桌面端把本机令牌放进查询参数（后端只对 GET 接受这种方式）。
+   */
+  async backendUrl(pathAndQuery: string): Promise<string> {
+    await this.initialize();
+    const url = new URL(pathAndQuery, `http://localhost:${this.serverPort}`);
+    if (this.apiToken) url.searchParams.set(API_TOKEN_QUERY, this.apiToken);
+    return url.toString();
   }
 
   async getClient() {
@@ -364,13 +382,11 @@ export class ApiClient {
    * 结果是播放器黑屏 0:00（实测 404）。与 `getAssetRawUrl` 同一套做法。
    */
   async getJobVideoStreamUrl(jobId: string): Promise<string> {
-    const serverPort = this.serverPort || (typeof window !== 'undefined' && window.electron?.getServerPort ? await window.electron.getServerPort() : 5173);
-    return `http://localhost:${serverPort}/api/jobs/${jobId}/video/stream`;
+    return this.backendUrl(`/api/jobs/${jobId}/video/stream`);
   }
 
   async getAssetRawUrl(id: string): Promise<string> {
-    const serverPort = this.serverPort || (typeof window !== 'undefined' && window.electron?.getServerPort ? await window.electron.getServerPort() : 5173);
-    return `http://localhost:${serverPort}/api/assets/${id}/raw`;
+    return this.backendUrl(`/api/assets/${id}/raw`);
   }
 
   private async publishingRequest<T>(config: AxiosRequestConfig): Promise<T> {
@@ -835,8 +851,7 @@ export class ApiClient {
       onConnectionError?: (message: string) => void;
     }
   ): Promise<() => void> {
-    await this.initialize();
-    const source = new EventSource(`http://localhost:${this.serverPort}/api/jobs/${id}/steps/${step}/events`);
+    const source = new EventSource(await this.backendUrl(`/api/jobs/${id}/steps/${step}/events`));
     const eventTypes: JobStepStreamEvent['type'][] = ['started', 'preview', 'completed', 'paused', 'error'];
     let terminal = false;
     let consecutiveErrors = 0;
@@ -936,19 +951,16 @@ export class ApiClient {
 
   // 下载生成的视频
   async downloadVideo(id: string): Promise<string> {
-    const serverPort = this.serverPort || (typeof window !== 'undefined' && window.electron?.getServerPort ? await window.electron.getServerPort() : 5173);
-    return `http://localhost:${serverPort}/api/jobs/${id}/video/download`;
+    return this.backendUrl(`/api/jobs/${id}/video/download`);
   }
 
   async getVideoStreamUrl(id: string): Promise<string> {
-    const serverPort = this.serverPort || (typeof window !== 'undefined' && window.electron?.getServerPort ? await window.electron.getServerPort() : 5173);
-    return `http://localhost:${serverPort}/api/jobs/${id}/video/stream`;
+    return this.backendUrl(`/api/jobs/${id}/video/stream`);
   }
 
   // 已下载的原视频（视频转录步骤产出），与成片流地址同构
   async getRawVideoStreamUrl(id: string): Promise<string> {
-    const serverPort = this.serverPort || (typeof window !== 'undefined' && window.electron?.getServerPort ? await window.electron.getServerPort() : 5173);
-    return `http://localhost:${serverPort}/api/jobs/${id}/raw-video/stream`;
+    return this.backendUrl(`/api/jobs/${id}/raw-video/stream`);
   }
 
   // 健康检查
@@ -1069,7 +1081,11 @@ export class ApiClient {
     // 使用 fetch 以支持流式读取
     const response = await fetch(`http://localhost:${port}/api/collections/${id}/generate-skill`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.apiToken ? { [API_TOKEN_HEADER]: this.apiToken } : {}),
+        ...(this.localSessionToken ? { 'X-Local-Session': this.localSessionToken } : {}),
+      },
       body: JSON.stringify(options),
     });
 

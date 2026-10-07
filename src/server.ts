@@ -54,13 +54,22 @@ const app = await createExpressApp({
   toutiaoProfileDir: env("TOUTIAO_PROFILE_DIR"),
   // 小红书：同一套 env 契约（浏览器解析链缺省就能找到打包进来的 headless shell）
   xhsBrowserBinary: env("XHS_BROWSER_BINARY"),
-  xhsProfileDir: env("XHS_PROFILE_DIR")
+  xhsProfileDir: env("XHS_PROFILE_DIR"),
+  // 可选：设置后 `/api/*` 必须带 `X-Doin-Token`（见 src/lib/local-origin-guard.ts）
+  apiToken: env("DOIN_API_TOKEN")
 });
 
 const port = Number(env("PORT") ?? 3100);
 
-const server = app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+// 只监听本机回环：这是单机工作台，不应暴露到局域网（早先不传 host 会监听所有网卡）。
+const host = "127.0.0.1";
+const server = app.listen(port, host, () => {
+  console.log(`Server running at http://${host}:${port}`);
+});
+
+// 漏网的 Promise 拒绝只记日志，不让整个后端随之退出（Node 默认会因此崩溃）。
+process.on("unhandledRejection", (reason) => {
+  console.error("[server] Unhandled promise rejection:", reason);
 });
 
 // 设置全局超时：10 分钟（generate-skill 等路由需要较长时间）

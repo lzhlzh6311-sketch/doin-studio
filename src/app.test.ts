@@ -1117,6 +1117,41 @@ test("identity responses never expose pin secrets and CORS allows identity reque
   }
 });
 
+test("a web page on another origin cannot open a local session or read config", async () => {
+  const fixture = await appFixture();
+  try {
+    const session = await fetch(`${fixture.baseUrl}/api/local-sessions/auto`, {
+      method: "POST",
+      headers: { Origin: "https://evil.example" },
+    });
+    assert.equal(session.status, 403);
+    assert.equal(session.headers.get("access-control-allow-origin"), null);
+    const config = await fetch(`${fixture.baseUrl}/api/config`, { headers: { Origin: "https://evil.example" } });
+    assert.equal(config.status, 403);
+    const preflight = await fetch(`${fixture.baseUrl}/api/jobs`, { method: "OPTIONS", headers: { Origin: "https://evil.example" } });
+    assert.equal(preflight.status, 403);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("unexpected route errors return safe JSON without stack traces", async () => {
+  const fixture = await appFixture();
+  try {
+    const response = await fetch(`${fixture.baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: '{"input":',
+    });
+    const text = await response.text();
+    assert.equal(response.status, 400);
+    assert.doesNotMatch(text, /at .*\.ts:|node_modules|<pre>/);
+    assert.equal(JSON.parse(text).code, "invalid_json");
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("identity error boundary returns safe JSON for malformed request bodies", async () => {
   const fixture = await appFixture();
   try {

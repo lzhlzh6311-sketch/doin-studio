@@ -285,3 +285,32 @@ test('parseApiError keeps ordinary failures distinct from cancellation', () => {
   assert.equal(parseApiError({ code: 'ERR_CANCELED', name: 'CanceledError' }).code, REQUEST_CANCELLED_CODE);
   assert.equal(parseApiError({ name: 'AbortError' }).message, '已取消等待');
 });
+
+test('desktop requests carry the per-launch API token: header for API calls, query for media URLs', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { electron: { getServerPort: async () => 4321, getApiToken: async () => 'token-abc' } } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete (globalThis as any).window; });
+
+  const client = new ApiClient();
+  const http = await client.getClient();
+  const response = await http.request({
+    url: '/api/jobs',
+    adapter: async config => ({ data: { token: config.headers?.get?.('X-Doin-Token') ?? null, baseURL: config.baseURL }, status: 200, statusText: 'OK', headers: {}, config }),
+  });
+  assert.deepEqual(response.data, { token: 'token-abc', baseURL: 'http://localhost:4321' });
+
+  assert.equal(await client.getAssetRawUrl('asset-1'), 'http://localhost:4321/api/assets/asset-1/raw?doin_token=token-abc');
+  assert.equal(await client.getVideoStreamUrl('job-1'), 'http://localhost:4321/api/jobs/job-1/video/stream?doin_token=token-abc');
+  assert.equal(
+    await client.getGalleryImageUrl('g-1', 2, 'gen 1'),
+    'http://localhost:4321/api/galleries/g-1/images/2?generation=gen+1&doin_token=token-abc',
+  );
+});
+
+test('browser development mode has no token and keeps plain URLs', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { electron: { getServerPort: async () => 5173 } } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete (globalThis as any).window; });
+  const client = new ApiClient();
+  assert.equal(await client.getAssetRawUrl('asset-1'), 'http://localhost:5173/api/assets/asset-1/raw');
+});

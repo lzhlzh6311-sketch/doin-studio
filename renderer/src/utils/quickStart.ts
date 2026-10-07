@@ -58,7 +58,7 @@ export function buildSetupItems(input: { hasAiKey: boolean | null; runtime: Runt
   return [
     { id: 'ai', label: '配置 AI 密钥', purpose: '改写文案、写公众号文章、生成分镜都靠它', section: 'models', required: true, done: input.hasAiKey === true, unknown: input.hasAiKey === null },
     runtimeItem('douyin', 'douyin', '登录抖音', '导入、下载抖音视频需要登录态', 'douyin', true),
-    runtimeItem('ffmpeg', 'ffmpeg', '视频引擎就绪', '转录和成片需要 ffmpeg', 'runtime', true),
+    runtimeItem('ffmpeg', 'ffmpeg', '视频引擎就绪', '转录和成片需要视频引擎', 'runtime', true),
     runtimeItem('toutiao', 'toutiao', '登录今日头条', '一键发布头条文章 / 图文', 'toutiao', false),
     runtimeItem('xiaohongshu', 'xiaohongshu', '登录小红书', '一键发布小红书笔记', 'xhs', false),
   ];

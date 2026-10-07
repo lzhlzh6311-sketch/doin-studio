@@ -327,7 +327,7 @@ export const RUNTIME_CHANNEL_LABELS: Record<RuntimeChannelId, string> = {
 
 const LABELS: Record<RuntimeItemId, string> = {
   ...RUNTIME_CHANNEL_LABELS,
-  ffmpeg: "ffmpeg",
+  ffmpeg: "视频引擎（ffmpeg）",
   storage: "存储目录",
 };
 

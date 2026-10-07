@@ -152,7 +152,14 @@
     "nsis": {
       "artifactName": "Doin-Studio-${version}-windows-${arch}.${ext}",
       "allowToChangeInstallationDirectory": true,
-      "oneClick": false
+      "oneClick": false,
+      "language": "2052",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "multiLanguageInstaller": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Doin Studio"
     },
     "asarUnpack": [
       "node_modules/better-sqlite3/**"

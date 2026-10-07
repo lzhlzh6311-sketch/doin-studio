@@ -40,7 +40,7 @@ test('PrimaryRail renders nav with icon links', () => {
     }),
   );
   assert.match(markup, /aria-label="主导航"/);
-  for (const label of ['作品', '合集', 'Skills', '素材', '发布', '垃圾桶', '设置']) {
+  for (const label of ['作品', '合集', '技能库', '素材', '发布', '垃圾桶', '设置']) {
     assert.match(markup, new RegExp(`aria-label="${label}"`));
   }
 });

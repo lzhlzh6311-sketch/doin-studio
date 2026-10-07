@@ -38,7 +38,7 @@ export function VideoArtifact({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold text-ink">视频成片</h3>
-          <p className="mt-1 text-sm text-ink-muted">HyperFrames 本地渲染的 9:16 无声动效版。</p>
+          <p className="mt-1 text-sm text-ink-muted">本机渲染的 9:16 无声动效版。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -130,7 +130,7 @@ export function VideoArtifact({
             <p className="break-all font-mono text-xs text-ink">{output.videoPath}</p>
           </div>
           <div className="rounded-lg bg-elevated p-4">
-            <label className="mb-2 block text-xs font-medium uppercase text-ink-muted">HyperFrames 项目</label>
+            <label className="mb-2 block text-xs font-medium uppercase text-ink-muted">渲染工程</label>
             <p className="break-all font-mono text-xs text-ink">{output.projectPath}</p>
           </div>
         </div>

@@ -44,6 +44,7 @@ const app = await createExpressApp({
   cookiesFromBrowser: env("YTDLP_COOKIES_FROM_BROWSER"),
   whisperCliPath: env("WHISPER_CLI_BINARY"),
   whisperModelPath: env("WHISPER_MODEL_PATH"),
+  whisperModelAutoDownload: process.env.WHISPER_MODEL_AUTO_DOWNLOAD !== "0",
   hyperframesNpxBinary: env("HYPERFRAMES_NPX_BINARY"),
   // 抖音图文自动发布的外部引擎（social-auto-upload）；未配置时该通路给出明确安装指引
   sauBinary: env("SAU_BINARY"),

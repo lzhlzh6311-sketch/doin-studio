@@ -341,7 +341,7 @@ function readCheckRecord(value: unknown): RuntimeCheckRecord | null {
 
 class RuntimeCheckTimeout extends Error {
   constructor() {
-    super("runtime check timeout");
+    super("环境检测超时");
     this.name = "RuntimeCheckTimeout";
   }
 }

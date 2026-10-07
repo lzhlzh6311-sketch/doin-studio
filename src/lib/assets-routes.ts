@@ -159,7 +159,7 @@ export function registerAssetRoutes(app: Express, deps: AssetRouteDeps): void {
     try {
       const resolved = await deps.assets.resolveFile(req.params.id);
       if (!resolved) {
-        res.status(404).json({ message: "asset not found" });
+        res.status(404).json({ message: "素材不存在或已被删除" });
         return;
       }
 
@@ -167,7 +167,7 @@ export function registerAssetRoutes(app: Express, deps: AssetRouteDeps): void {
       try {
         const stats = await handle.stat();
         if (!stats.isFile() || stats.size === 0) {
-          res.status(404).json({ message: "asset not found" });
+          res.status(404).json({ message: "素材不存在或已被删除" });
           return;
         }
         await sendRangeResponse(req, res, {
@@ -191,7 +191,7 @@ export function registerAssetRoutes(app: Express, deps: AssetRouteDeps): void {
     try {
       const removed = await deps.assets.remove(req.params.id);
       if (!removed) {
-        res.status(404).json({ message: "asset not found" });
+        res.status(404).json({ message: "素材不存在或已被删除" });
         return;
       }
       res.status(204).end();

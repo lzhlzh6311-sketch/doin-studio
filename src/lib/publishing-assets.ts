@@ -1594,7 +1594,7 @@ export class PublishingAssetService {
       await this.assertRootAndDirectory(context, tempPath, tempIdentity);
       const coverStats = await lstat(coverPath);
       await access(coverPath, constants.R_OK);
-      if (coverStats.isSymbolicLink() || !coverStats.isFile() || coverStats.size === 0) throw new Error("empty cover");
+      if (coverStats.isSymbolicLink() || !coverStats.isFile() || coverStats.size === 0) throw new Error("封面为空");
       return coverPath;
     } catch {
       await this.safeRemoveDirect(context, tempPath, tempIdentity, coverPath).catch(() => undefined);

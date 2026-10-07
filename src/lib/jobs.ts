@@ -196,7 +196,7 @@ export class JobStore {
     const parsed = shareText ? parseDouyinShare({ shareText, sourceUrl: input.sourceUrl }) : null;
     const sourceUrl = input.sourceUrl ?? parsed?.sourceUrl ?? "";
     if (!sourceUrl) {
-      throw new Error("sourceUrl or shareText with url is required");
+      throw new Error("请填写抖音视频链接，或包含链接的分享口令");
     }
     if (!isHttpSourceUrl(sourceUrl)) {
       throw new JobInputError("视频链接必须是 http(s) 地址");
@@ -229,7 +229,7 @@ export class JobStore {
 
   async runStep(id: string, step: PipelineStep) {
     if (this.runningSteps.has(id)) {
-      throw new JobStepError("another step is already running for this job", 409);
+      throw new JobStepError("这个作品已有步骤在执行，请等它结束", 409);
     }
 
     this.runningSteps.add(id);
@@ -278,11 +278,11 @@ export class JobStore {
         }
       }
 
-      const failed = await this.markStepFailed(id, step, lastError || "step failed");
+      const failed = await this.markStepFailed(id, step, lastError || "步骤执行失败");
       if (isStreamableStep(step)) {
-        this.stepEvents.publish(id, step, { type: "error", message: lastError || "step failed" });
+        this.stepEvents.publish(id, step, { type: "error", message: lastError || "步骤执行失败" });
       }
-      throw new JobStepError(lastError || "step failed", 500, failed);
+      throw new JobStepError(lastError || "步骤执行失败", 500, failed);
     } finally {
       this.runningSteps.delete(id);
       this.activeRuns.delete(id);
@@ -293,19 +293,19 @@ export class JobStore {
   async pauseStep(id: string) {
     const record = await this.get(id);
     if (!record) {
-      throw new JobStepError("job not found", 404);
+      throw new JobStepError("作品不存在或已被删除", 404);
     }
     if (record.deletedAt) {
-      throw new JobStepError("deleted job cannot pause steps", 409, record);
+      throw new JobStepError("作品已删除，不能暂停步骤", 409, record);
     }
     if (record.workflowMode !== "manual" || !record.steps) {
-      throw new JobStepError("manual workflow steps are not available for this job", 409, record);
+      throw new JobStepError("这个作品不支持手动执行步骤", 409, record);
     }
 
     const steps = this.ensurePipelineSteps(record.steps);
     const step = PIPELINE_STEPS.find((candidate) => steps[candidate].status === "running");
     if (!step) {
-      throw new JobStepError("no step is currently running", 409, record);
+      throw new JobStepError("当前没有正在执行的步骤", 409, record);
     }
 
     const activeRun = this.activeRuns.get(id);
@@ -344,25 +344,25 @@ export class JobStore {
       throw new JobStepError("补充内容不能为空", 400);
     }
     if (this.runningSteps.has(id)) {
-      throw new JobStepError("another step is already running for this job", 409);
+      throw new JobStepError("这个作品已有步骤在执行，请等它结束", 409);
     }
 
     const record = await this.get(id);
     if (!record) {
-      throw new JobStepError("job not found", 404);
+      throw new JobStepError("作品不存在或已被删除", 404);
     }
     if (record.deletedAt) {
-      throw new JobStepError("deleted job cannot run steps", 409, record);
+      throw new JobStepError("作品已删除，不能执行步骤", 409, record);
     }
     if (record.workflowMode !== "manual" || !record.steps) {
-      throw new JobStepError("manual workflow steps are not available for this job", 409, record);
+      throw new JobStepError("这个作品不支持手动执行步骤", 409, record);
     }
     const steps = this.ensurePipelineSteps(record.steps);
     if (steps.clean.status === "running") {
-      throw new JobStepError("step is already running", 409, record);
+      throw new JobStepError("这个步骤正在执行中", 409, record);
     }
     if (steps.transcribe.status !== "succeeded") {
-      throw new JobStepError("previous step has not succeeded", 409, record);
+      throw new JobStepError("上一步还没有成功，请先完成上一步", 409, record);
     }
 
     this.runningSteps.add(id);
@@ -389,7 +389,7 @@ export class JobStore {
       this.stepEvents.publish(id, "clean", { type: "completed" });
       return succeeded;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "reclean failed";
+      const message = error instanceof Error ? error.message : "补充洗稿失败";
       const failed = await this.markStepFailed(id, "clean", message);
       this.stepEvents.publish(id, "clean", { type: "error", message });
       throw new JobStepError(message, 500, failed);
@@ -429,29 +429,29 @@ export class JobStore {
   private async getStepRunnableRecord(id: string, step: PipelineStep) {
     const record = await this.get(id);
     if (!record) {
-      throw new JobStepError("job not found", 404);
+      throw new JobStepError("作品不存在或已被删除", 404);
     }
     if (record.deletedAt) {
-      throw new JobStepError("deleted job cannot run steps", 409, record);
+      throw new JobStepError("作品已删除，不能执行步骤", 409, record);
     }
     if (record.workflowMode !== "manual" || !record.steps) {
-      throw new JobStepError("manual workflow steps are not available for this job", 409, record);
+      throw new JobStepError("这个作品不支持手动执行步骤", 409, record);
     }
 
     const steps = this.ensurePipelineSteps(record.steps);
     const current = steps[step];
     if (current.status === "running") {
-      throw new JobStepError("step is already running", 409, record);
+      throw new JobStepError("这个步骤正在执行中", 409, record);
     }
     if (current.status === "succeeded") {
-      throw new JobStepError("step has already succeeded", 409, record);
+      throw new JobStepError("这个步骤已经完成", 409, record);
     }
     const previous = STEP_PREVIOUS[step];
     if (previous && steps[previous].status !== "succeeded") {
-      throw new JobStepError("previous step has not succeeded", 409, record);
+      throw new JobStepError("上一步还没有成功，请先完成上一步", 409, record);
     }
     if (PIPELINE_STEPS.some((candidate) => steps[candidate].status === "running")) {
-      throw new JobStepError("another step is already running for this job", 409, record);
+      throw new JobStepError("这个作品已有步骤在执行，请等它结束", 409, record);
     }
 
     return {
@@ -490,7 +490,7 @@ export class JobStore {
   private async runExtractAudioStep(id: string) {
     const record = await this.requireRecord(id);
     if (!record.videoPath) {
-      throw new Error("video file is missing; transcription could not download the source video");
+      throw new Error("原视频文件缺失：没能下载到源视频，无法转录");
     }
 
     const audioResult = await this.media.extractAudio(record.videoPath, id);
@@ -516,13 +516,13 @@ export class JobStore {
     await this.update(id, { status: "processing", stage: "transcribing" });
     const audioPath = record.audioPath;
     if (!audioPath) {
-      throw new Error("audio file is missing; transcription could not extract audio from the source video");
+      throw new Error("音频文件缺失：没能从源视频提取音频，无法转录");
     }
 
     const transcriptResult = await this.asr.transcribe(audioPath);
     const transcriptText = transcriptResult?.text ? toSimplifiedChinese(transcriptResult.text).trim() : "";
     if (!transcriptResult || !transcriptText) {
-      throw new Error("ASR returned no transcript; check ASR configuration and retry");
+      throw new Error("语音转录没有识别出内容，请确认视频有人声后重试");
     }
 
     const audioManifest = await this.readOptionalJson<{ duration?: number }>(
@@ -613,7 +613,7 @@ export class JobStore {
     const transcript = await this.readTranscript(id);
     const transcriptText = transcript?.transcript?.trim() || transcript?.text?.trim() || "";
     if (!transcriptText) {
-      throw new Error("transcript is missing; run ASR transcription first");
+      throw new Error("还没有转录结果，请先执行「视频转录」");
     }
     const draft = this.defaultScriptAsset(record.sourceUrl, record.topic, parsed, pageInfo, transcriptText);
     return { record, parsed, pageInfo, transcriptText, draft };
@@ -650,7 +650,7 @@ export class JobStore {
     const record = await this.requireRecord(id);
     const script = await this.storage.readJson<ScriptAsset>(record.storagePath);
     if (!script.cleanScript?.trim() && !script.voiceoverScript?.trim()) {
-      throw new Error("clean script is missing; run AI rewrite first");
+      throw new Error("还没有洗稿结果，请先执行「AI 洗稿」");
     }
     if (!this.cleaner.planShortVideo) {
       throw new Error("AI 分镜服务不可用");
@@ -681,7 +681,7 @@ export class JobStore {
 
   private async runGenerateVideoStep(id: string, signal?: AbortSignal) {
     if (!this.videoGenerator) {
-      throw new Error("HyperFrames video generator is not configured");
+      throw new Error("视频生成引擎未配置");
     }
 
     const record = await this.requireRecord(id);
@@ -746,7 +746,7 @@ export class JobStore {
     const index = await this.readIndex();
     const current = index[id];
     if (!current) {
-      throw new JobStepError("job not found", 404);
+      throw new JobStepError("作品不存在或已被删除", 404);
     }
 
     const steps = this.ensurePipelineSteps(current.steps);
@@ -834,7 +834,7 @@ export class JobStore {
   private async requireRecord(id: string) {
     const record = await this.get(id);
     if (!record) {
-      throw new Error("job not found");
+      throw new Error("作品不存在或已被删除");
     }
     return record;
   }
@@ -844,7 +844,7 @@ export class JobStore {
     try {
       pageInfo = await fetchDouyinPageInfo(sourceUrl);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "page extraction failed";
+      const message = error instanceof Error ? error.message : "页面解析失败";
       pageInfo = {
         requestedUrl: sourceUrl,
         finalUrl: sourceUrl,

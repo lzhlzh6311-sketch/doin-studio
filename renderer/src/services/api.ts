@@ -6,6 +6,8 @@ import type { ImageAssetMetadata } from '../../../src/lib/assets-store';
 import type { Gallery, GalleryDraft, GalleryPreview, GallerySource } from '../../../src/lib/gallery-types';
 import type { HotspotBoard, HotspotFavorite } from '../../../src/lib/hotspots';
 import type { AudioBoard, AudioImportBatch, AudioPreview } from '../../../src/lib/online-audio';
+import type { WhisperModelStatus } from '../../../src/lib/whisper-model';
+export type { WhisperModelStatus };
 import type { AudioSource, AudioBoardId, OnlineTrack } from '../../../src/lib/online-audio-sources';
 import type {
   ApiResponse,
@@ -533,6 +535,18 @@ export class ApiClient {
 
   async openXhsDraftWindow(): Promise<{ message: string }> {
     return this.publishingRequest<{ message: string }>({ method: 'POST', url: '/api/publishing/xhs/drafts/window' });
+  }
+
+  // ── 语音转录模型（按需下载）──
+
+  async getWhisperModel(): Promise<WhisperModelStatus> {
+    const response = await this.publishingRequest<{ model: WhisperModelStatus }>({ method: 'GET', url: '/api/runtime/whisper-model' });
+    return response.model;
+  }
+
+  async downloadWhisperModel(): Promise<WhisperModelStatus> {
+    const response = await this.publishingRequest<{ model: WhisperModelStatus }>({ method: 'POST', url: '/api/runtime/whisper-model/download' });
+    return response.model;
   }
 
   // ── 运行环境状态一览（免费检查零副作用；深检是后台任务 + 轮询）──

@@ -23,6 +23,7 @@ import {
   type RuntimeStatusConfig,
   type RuntimeStatusDeps,
 } from "./runtime-status.js";
+import type { WhisperModelManager } from "./whisper-model.js";
 
 export class RuntimeRouteError extends Error {
   constructor(
@@ -42,6 +43,8 @@ export interface RuntimeRouteDeps {
   deps: RuntimeStatusDeps;
   /** 深检任务。 */
   checks: RuntimeChecks;
+  /** 语音模型按需下载（安装包不再自带）。 */
+  whisperModel?: WhisperModelManager;
 }
 
 export function registerRuntimeRoutes(app: Express, deps: RuntimeRouteDeps): void {
@@ -91,6 +94,25 @@ export function registerRuntimeRoutes(app: Express, deps: RuntimeRouteDeps): voi
       res.json({ check: await deps.checks.cancel(requiredParam(req.params.checkId, "checkId")) });
     }),
   );
+
+  const whisperModel = deps.whisperModel;
+  if (whisperModel) {
+    // 语音模型状态 / 下载进度（界面每秒轮询一次即可）
+    router.get(
+      "/runtime/whisper-model",
+      authenticated,
+      route(async (_req, res) => { res.json({ model: await whisperModel.status() }); }),
+    );
+    // 后台开始下载（已在下载或已就绪时幂等），立即 202
+    router.post(
+      "/runtime/whisper-model/download",
+      authenticated,
+      route(async (_req, res) => {
+        whisperModel.start();
+        res.status(202).json({ model: await whisperModel.status() });
+      }),
+    );
+  }
 
   app.use("/api", router);
   app.use(runtimeErrorMapper);

@@ -21,7 +21,7 @@ const TOUTIAO_COPY: QrLoginCopy = {
   appName: '今日头条',
   testId: 'toutiao-login-panel',
   qrTestId: 'toutiao-qr',
-  footnote: '登录用的是应用内置的无头浏览器（不会弹出窗口），登录态保存在本机 storage 里的头条会话目录中。',
+  footnote: '登录用的是应用内置的无头浏览器（不会弹出窗口），登录态保存在本机数据目录的头条会话文件夹中。',
 };
 
 export interface ToutiaoLoginPanelProps {

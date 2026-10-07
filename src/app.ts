@@ -56,6 +56,7 @@ import { PublishingAssetService } from "./lib/publishing-assets.js";
 import { PublishingService, summarizeCliOutput } from "./lib/publishing-service.js";
 import { registerPublishingRoutes } from "./lib/publishing-routes.js";
 import { registerRuntimeRoutes } from "./lib/runtime-routes.js";
+import { WhisperModelManager } from "./lib/whisper-model.js";
 import { createDefaultRuntimeStatusDeps } from "./lib/runtime-status.js";
 import type { AiProvider, CollectionRecord, DueNotification, PipelineStep, ScriptAsset, StreamablePipelineStep } from "./types.js";
 
@@ -74,6 +75,10 @@ export interface ServerConfig {
   cookiesFromBrowser?: string;
   whisperCliPath?: string;
   whisperModelPath?: string;
+  /** 旧安装包随带的模型路径；存在就直接用。 */
+  whisperBundledModelPath?: string;
+  /** 模型缺失时自动下载（桌面端与独立后端开启；测试默认关闭，避免联网）。 */
+  whisperModelAutoDownload?: boolean;
   hyperframesNpxBinary?: string;
   /** social-auto-upload 的 `sau` 可执行文件路径（env: SAU_BINARY）。 */
   sauBinary?: string;
@@ -194,10 +199,16 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     cookiesFromBrowser: config.cookiesFromBrowser
   });
 
+  const whisperModelPath = new AsrService({ rootDir: config.rootDir, whisperModelPath: config.whisperModelPath }).defaultModelPath;
+  const whisperModel = new WhisperModelManager({
+    modelPath: whisperModelPath,
+    bundledPath: config.whisperBundledModelPath
+  });
   const asr = new AsrService({
     rootDir: config.rootDir,
     whisperCliPath: config.whisperCliPath,
-    whisperModelPath: config.whisperModelPath
+    whisperModelPath,
+    ...(config.whisperModelAutoDownload ? { modelManager: whisperModel } : {})
   });
 
   const videoGenerator = new HyperframesVideoGenerator({
@@ -418,6 +429,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
    */
   registerRuntimeRoutes(app, {
     sessions: localSessions,
+    whisperModel,
     config: {
       storageRoot: config.storagePath,
       ...(config.sauBinary ? { sauBinary: config.sauBinary } : {}),
@@ -468,7 +480,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       const jobList = await jobs.list();
       res.json({ jobs: jobList });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to list jobs";
+      const message = error instanceof Error ? error.message : "读取作品列表失败";
       res.status(500).json({ message });
     }
   });
@@ -478,7 +490,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       const jobList = await jobs.listOverview();
       res.json({ jobs: jobList });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to list job overview";
+      const message = error instanceof Error ? error.message : "读取作品概览失败";
       res.status(500).json({ message });
     }
   });
@@ -491,18 +503,20 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     };
 
     if ((!sourceUrl || typeof sourceUrl !== "string") && (!shareText || typeof shareText !== "string")) {
-      res.status(400).json({ message: "sourceUrl or shareText is required" });
+      res.status(400).json({ message: "请填写抖音视频链接或分享口令" });
       return;
     }
 
     try {
       const record = await jobs.create({ sourceUrl, shareText, topic });
+      // 语音模型按需下载：建作品时就在后台开始拉，和视频下载并行，转录时多半已经下好。
+      if (config.whisperModelAutoDownload) whisperModel.start();
       res.status(201).json({
         job: record,
-        message: "job created"
+        message: "作品已创建"
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "job create failed";
+      const message = error instanceof Error ? error.message : "创建作品失败";
       res.status(error instanceof JobInputError ? 400 : 500).json({ message });
     }
   });
@@ -512,7 +526,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       const jobList = await jobs.listTrash();
       res.json({ jobs: jobList });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to list trash";
+      const message = error instanceof Error ? error.message : "读取回收站失败";
       res.status(500).json({ message });
     }
   });
@@ -520,39 +534,39 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.delete("/api/jobs/:id", async (req, res) => {
     const record = await jobs.trash(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
-    res.json({ job: record, message: "job moved to trash" });
+    res.json({ job: record, message: "作品已移到回收站" });
   });
 
   app.post("/api/jobs/:id/restore", async (req, res) => {
     const record = await jobs.restore(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
-    res.json({ job: record, message: "job restored" });
+    res.json({ job: record, message: "作品已恢复" });
   });
 
   app.delete("/api/jobs/:id/permanent", async (req, res) => {
     const result = await jobs.permanentlyDelete(req.params.id);
     if (result === "not_found") {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
     if (result === "not_in_trash") {
-      res.status(409).json({ message: "job is not in trash" });
+      res.status(409).json({ message: "作品不在回收站中" });
       return;
     }
     if (result === "active") {
-      res.status(409).json({ message: "active job cannot be permanently deleted" });
+      res.status(409).json({ message: "作品还在处理中，暂时不能彻底删除" });
       return;
     }
 
-    res.json({ message: "job permanently deleted" });
+    res.json({ message: "作品已彻底删除" });
   });
 
   const runStepRoute = async (id: string, step: PipelineStep) => {
@@ -562,7 +576,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         status: 200,
         body: {
           job: record,
-          message: "step completed"
+          message: "步骤已完成"
         }
       };
     } catch (error) {
@@ -575,7 +589,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
           }
         };
       }
-      const message = error instanceof Error ? error.message : "step failed";
+      const message = error instanceof Error ? error.message : "步骤执行失败";
       return {
         status: 500,
         body: { message }
@@ -591,7 +605,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     }
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -647,18 +661,18 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.post("/api/jobs/:id/reclean", async (req, res) => {
     const { supplementalText } = req.body as { supplementalText?: string };
     if (!supplementalText || typeof supplementalText !== "string" || !supplementalText.trim()) {
-      res.status(400).json({ message: "supplementalText is required" });
+      res.status(400).json({ message: "请填写补充内容" });
       return;
     }
     try {
       const record = await jobs.reclean(req.params.id, supplementalText.trim());
-      res.json({ job: record, message: "reclean completed" });
+      res.json({ job: record, message: "补充洗稿已完成" });
     } catch (error) {
       if (error instanceof JobStepError) {
         res.status(error.statusCode).json({ message: error.message, job: error.job });
         return;
       }
-      res.status(500).json({ message: error instanceof Error ? error.message : "reclean failed" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "补充洗稿失败" });
     }
   });
 
@@ -675,20 +689,20 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.post("/api/jobs/:id/steps/pause", async (req, res) => {
     try {
       const job = await jobs.pauseStep(req.params.id);
-      res.json({ job, message: "step paused" });
+      res.json({ job, message: "步骤已暂停" });
     } catch (error) {
       if (error instanceof JobStepError) {
         res.status(error.statusCode).json({ message: error.message, job: error.job });
         return;
       }
-      res.status(500).json({ message: error instanceof Error ? error.message : "step pause failed" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "暂停步骤失败" });
     }
   });
 
   app.get("/api/jobs/:id", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -698,7 +712,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/script", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -707,7 +721,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       res.json({ script: simplifyChineseValue(script) });
     } catch (error) {
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "script not found" });
+        res.status(404).json({ message: "还没有生成文稿" });
         return;
       }
       throw error;
@@ -717,7 +731,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/cleaned", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -726,7 +740,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       res.json({ cleaned: simplifyChineseValue(cleaned) });
     } catch (error) {
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "cleaned result not found" });
+        res.status(404).json({ message: "还没有洗稿结果" });
         return;
       }
       throw error;
@@ -736,7 +750,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/raw-share", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -745,7 +759,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       res.json({ rawShare });
     } catch (error) {
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "raw share not found" });
+        res.status(404).json({ message: "没有找到原始分享内容" });
         return;
       }
       throw error;
@@ -755,7 +769,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/raw-page", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -764,7 +778,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       res.json({ rawPage });
     } catch (error) {
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "raw page not found" });
+        res.status(404).json({ message: "没有找到原始页面数据" });
         return;
       }
       throw error;
@@ -774,7 +788,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/raw-transcript", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -783,7 +797,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       res.json({ rawTranscript: simplifyChineseValue(rawTranscript) });
     } catch (error) {
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "raw transcript not found" });
+        res.status(404).json({ message: "还没有转录结果" });
         return;
       }
       throw error;
@@ -794,7 +808,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/video-prompts", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -815,7 +829,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       }));
     } catch (error) {
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "script not found" });
+        res.status(404).json({ message: "还没有生成文稿" });
         return;
       }
       throw error;
@@ -825,7 +839,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/video-output", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -842,13 +856,13 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
           : null
       );
       if (!videoOutput) {
-        res.status(404).json({ message: "video output not generated yet" });
+        res.status(404).json({ message: "视频成片还没有生成" });
         return;
       }
       res.json({ videoOutput });
     } catch (error) {
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "script not found" });
+        res.status(404).json({ message: "还没有生成文稿" });
         return;
       }
       throw error;
@@ -858,7 +872,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/video/download", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -871,7 +885,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         return;
       }
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "script not found" });
+        res.status(404).json({ message: "还没有生成文稿" });
         return;
       }
       throw error;
@@ -881,7 +895,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/video/stream", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -894,7 +908,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         return;
       }
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "script not found" });
+        res.status(404).json({ message: "还没有生成文稿" });
         return;
       }
       throw error;
@@ -906,7 +920,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   app.get("/api/jobs/:id/raw-video/stream", async (req, res) => {
     const record = await jobs.get(req.params.id);
     if (!record) {
-      res.status(404).json({ message: "job not found" });
+      res.status(404).json({ message: "作品不存在或已被删除" });
       return;
     }
 
@@ -919,7 +933,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         return;
       }
       if (isMissingFileError(error)) {
-        res.status(404).json({ message: "script not found" });
+        res.status(404).json({ message: "还没有生成文稿" });
         return;
       }
       throw error;
@@ -1033,17 +1047,17 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     try {
       const { pageUrl, maxItems } = req.body as { pageUrl?: string; maxItems?: number };
       if (!pageUrl || typeof pageUrl !== "string") {
-        res.status(400).json({ message: "pageUrl is required" });
+        res.status(400).json({ message: "请填写创作者主页链接" });
         return;
       }
       const result = await collections.create(pageUrl, Math.min(maxItems ?? 100, 500));
       res.status(201).json({
         collection: result.collection,
         crawlResult: result.crawlResult,
-        message: "collection created",
+        message: "合集已创建",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "collection create failed";
+      const message = error instanceof Error ? error.message : "创建合集失败";
       res.status(500).json({ message });
     }
   });
@@ -1054,7 +1068,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       const overviews = await collections.listOverviews();
       res.json({ collections: overviews });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to list collections";
+      const message = error instanceof Error ? error.message : "读取合集列表失败";
       res.status(500).json({ message });
     }
   });
@@ -1064,12 +1078,12 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     try {
       const overview = await collections.getOverview(req.params.id);
       if (!overview) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
       res.json({ collection: overview });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to get collection";
+      const message = error instanceof Error ? error.message : "读取合集失败";
       res.status(500).json({ message });
     }
   });
@@ -1079,12 +1093,12 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     try {
       const deleted = await collections.delete(req.params.id);
       if (!deleted) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
-      res.json({ message: "collection deleted" });
+      res.json({ message: "合集已删除" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to delete collection";
+      const message = error instanceof Error ? error.message : "删除合集失败";
       res.status(500).json({ message });
     }
   });
@@ -1101,7 +1115,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
           : "已是最新，没有新视频",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to update collection";
+      const message = error instanceof Error ? error.message : "更新合集失败";
       res.status(500).json({ message });
     }
   });
@@ -1111,7 +1125,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     try {
       const { selectedIds, topic } = req.body as { selectedIds?: string[]; topic?: string };
       if (!selectedIds || !Array.isArray(selectedIds) || selectedIds.length === 0) {
-        res.status(400).json({ message: "selectedIds array is required" });
+        res.status(400).json({ message: "请先选择要处理的视频" });
         return;
       }
       const result = await collections.createChildJobs(
@@ -1125,7 +1139,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         message: `${result.createdJobs.length} 个子任务已创建`,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to create child jobs";
+      const message = error instanceof Error ? error.message : "批量创建作品失败";
       res.status(500).json({ message });
     }
   });
@@ -1136,13 +1150,13 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       const { id, step } = req.params;
       const pipelineStep = step as PipelineStep;
       if (!["transcribe", "clean", "generate_video_prompts", "generate_video"].includes(pipelineStep)) {
-        res.status(400).json({ message: `invalid step: ${step}` });
+        res.status(400).json({ message: `无效的步骤：${step}` });
         return;
       }
 
       const collection = await collections.get(id);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
 
@@ -1152,7 +1166,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
           await jobs.runStep(jobId, pipelineStep);
           results.push({ jobId, status: "ok" });
         } catch (error) {
-          const message = error instanceof Error ? error.message : "step failed";
+          const message = error instanceof Error ? error.message : "步骤执行失败";
           results.push({ jobId, status: "error", error: message });
         }
       }
@@ -1173,7 +1187,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "batch step failed";
+      const message = error instanceof Error ? error.message : "批量执行失败";
       res.status(500).json({ message });
     }
   });
@@ -1185,7 +1199,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     try {
       const collection = await collections.get(req.params.id);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
 
@@ -1217,14 +1231,14 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
 
       res.json({ itemStates });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "failed to get item states";
+      const message = error instanceof Error ? error.message : "读取视频状态失败";
       res.status(500).json({ message });
     }
   });
     try {
       const collection = await collections.get(req.params.id);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
 
@@ -1274,7 +1288,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "fetch transcripts failed";
+      const message = error instanceof Error ? error.message : "读取转录内容失败";
       res.status(500).json({ message });
     }
   });
@@ -1288,7 +1302,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
     try {
       const collection = await collections.get(req.params.id);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
 
@@ -1506,7 +1520,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
           stage: "error",
           success: false,
           progress: 100,
-          error: "所有视频提炼都失败，未生成 Skill。请检查 AI 中转服务后重试。",
+          error: "所有视频提炼都失败，未生成技能。请检查 AI 中转服务后重试。",
         });
         return;
       }
@@ -1592,7 +1606,7 @@ ${focusInstruction}`;
           stage: "error",
           success: false,
           progress: 100,
-          error: `Skill 分析阶段失败：${getSkillErrorMessage(err)}`
+          error: `技能分析阶段失败：${getSkillErrorMessage(err)}`
         });
         return;
       }
@@ -1624,7 +1638,7 @@ ${focusInstruction}`;
         // SKILL.md — 始终生成（增强版）
         {
           id: "enhanced_skill_md",
-          label: "增强 SKILL.md",
+          label: "增强技能文档",
           shouldRun: true,
           systemPrompt: `你是 Claude Code Skill 创作专家。基于视频转录内容，创作一份**生产级**知识增强型 SKILL.md。
 
@@ -1952,7 +1966,7 @@ ${tpl.topic}
       });
 
       const productLabels: Record<string, string> = {
-        enhanced_skill_md: "增强 SKILL.md",
+        enhanced_skill_md: "增强技能文档",
         knowledge_base: "结构化知识库",
         case_library: "案例库",
         quotes_collection: "金句合集",
@@ -1974,7 +1988,7 @@ ${tpl.topic}
           stage: "error",
           success: false,
           progress: 100,
-          error: `所有 Skill 产物生成失败：${failed.join("、") || "未知错误"}`,
+          error: `所有技能产物生成失败：${failed.join("、") || "未知错误"}`,
         });
         return;
       }
@@ -2007,12 +2021,12 @@ ${tpl.topic}
     try {
       const collection = await collections.get(req.params.id);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
 
       if (!collection.skillPath) {
-        res.status(404).json({ message: "该合集尚未生成 Skill" });
+        res.status(404).json({ message: "该合集尚未生成技能" });
         return;
       }
 
@@ -2081,7 +2095,7 @@ ${tpl.topic}
         templates,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "read skill failed";
+      const message = error instanceof Error ? error.message : "读取技能失败";
       res.status(500).json({ message });
     }
   });
@@ -2104,7 +2118,7 @@ ${tpl.topic}
         }));
       res.json({ skills });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "list skills failed";
+      const message = error instanceof Error ? error.message : "读取技能列表失败";
       res.status(500).json({ message });
     }
   });
@@ -2120,11 +2134,11 @@ ${tpl.topic}
 
       const collection = await collections.get(req.params.collectionId);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
       if (!collection.skillName || !collection.skillPath) {
-        res.status(400).json({ message: "该合集未生成 Skill" });
+        res.status(400).json({ message: "该合集未生成技能" });
         return;
       }
 
@@ -2137,7 +2151,7 @@ ${tpl.topic}
       // 检查目标路径是否已存在
       try {
         await access(newSkillDir);
-        res.status(409).json({ message: `Skill 名称 "${newName}" 已存在` });
+        res.status(409).json({ message: `技能名称「${newName}」已存在` });
         return;
       } catch { /* 不存在，可以重命名 */ }
 
@@ -2171,7 +2185,7 @@ ${tpl.topic}
 
       res.json({ success: true, skillName: newName, skillPath: newSkillDir });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "rename skill failed";
+      const message = error instanceof Error ? error.message : "重命名技能失败";
       res.status(500).json({ message });
     }
   });
@@ -2181,7 +2195,7 @@ ${tpl.topic}
     try {
       const collection = await collections.get(req.params.collectionId);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
 
@@ -2204,7 +2218,7 @@ ${tpl.topic}
 
       res.json({ success: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "delete skill failed";
+      const message = error instanceof Error ? error.message : "删除技能失败";
       res.status(500).json({ message });
     }
   });
@@ -2214,7 +2228,7 @@ ${tpl.topic}
     try {
       const collection = await collections.get(req.params.id);
       if (!collection) {
-        res.status(404).json({ message: "collection not found" });
+        res.status(404).json({ message: "合集不存在或已被删除" });
         return;
       }
 
@@ -2222,7 +2236,7 @@ ${tpl.topic}
       const updated = await collections.toggleAutoSyncSkill(req.params.id, enabled);
       res.json({ success: true, autoSyncSkill: updated?.autoSyncSkill });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "toggle failed";
+      const message = error instanceof Error ? error.message : "切换设置失败";
       res.status(500).json({ message });
     }
   });

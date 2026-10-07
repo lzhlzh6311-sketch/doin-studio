@@ -78,7 +78,11 @@ export async function startServer(): Promise<number> {
         ffmpegBinary: binaryPaths.ffmpeg,
         ffprobeBinary: binaryPaths.ffprobe,
         whisperCliPath: binaryPaths.whisperCli,
-        whisperModelPath: binaryPaths.whisperModel,
+        // 语音模型不再随安装包携带：打包版下载到用户数据目录（首次转录或设置里手动触发），
+        // 旧版安装包自带的模型仍优先复用。
+        whisperModelPath: isDev ? binaryPaths.whisperModel : path.join(electronApp.getPath('userData'), 'models', 'ggml-small.bin'),
+        whisperBundledModelPath: isDev ? undefined : binaryPaths.whisperModel,
+        whisperModelAutoDownload: true,
         runtimeBinDir: binaryPaths.binDir,
         hyperframesCliPath: binaryPaths.hyperframesCli,
         hyperframesNodeBinary: process.execPath,

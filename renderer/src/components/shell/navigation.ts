@@ -33,7 +33,7 @@ export const PRIMARY_NAV_ITEMS = [
   { to: '/hotspots', label: '热点', icon: Flame, matchPrefixes: [] },
   { to: '/galleries', label: '图集创作', icon: GalleryVerticalEnd, matchPrefixes: ['/galleries/'] },
   { to: '/collections', label: '合集', icon: Users, matchPrefixes: ['/collections/'] },
-  { to: '/skills', label: 'Skills', icon: Brain, matchPrefixes: [] },
+  { to: '/skills', label: '技能库', icon: Brain, matchPrefixes: [] },
   { to: '/assets', label: '素材', icon: Images, matchPrefixes: [] },
   { to: '/publishing', label: '发布', icon: Send, matchPrefixes: [] },
 ] satisfies NavigationItem[];
@@ -67,7 +67,7 @@ export function getPageContext(pathname: string): { title: string; subtitle: str
   if (pathname.startsWith('/jobs/')) return { title: '作品详情', subtitle: '创作流程与成果' };
   if (pathname.startsWith('/collections/')) return { title: '合集详情', subtitle: '创作者内容库' };
   if (pathname === '/collections') return { title: '合集', subtitle: '创作者内容库' };
-  if (pathname === '/skills') return { title: 'Skills', subtitle: '知识资产' };
+  if (pathname === '/skills') return { title: '技能库', subtitle: '知识资产' };
   if (pathname === '/assets') return { title: '素材', subtitle: '图片与音频素材库' };
   if (pathname === '/publishing') return { title: '发布工作台', subtitle: '按渠道提交与跟踪' };
   if (pathname === '/settings') return { title: '设置', subtitle: '连接与本地环境' };

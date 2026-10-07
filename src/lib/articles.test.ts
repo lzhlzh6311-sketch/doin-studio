@@ -138,3 +138,25 @@ test('package success has no fallible article write after the publishing transac
     assert.equal(result.package.id,'created-package');assert.equal((await f.service.get(a.id)).running,undefined);
   }finally {await f.dispose();}
 });
+
+test('cancelling a running step aborts the AI call and restores the previous step state', async () => {
+  let seen: AbortSignal | undefined; let started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  const f = await fixture({ run: (_step: string, _a: unknown, signal?: AbortSignal) => new Promise((_resolve, reject) => {
+    seen = signal; started();
+    signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+  }) });
+  try {
+    const a = await f.service.create({ keyword: '取消' });
+    const controller = new AbortController();
+    const operation = f.service.run(a.id, 'diagnose', a.version, controller.signal);
+    await ready;
+    assert.ok(seen, 'signal is passed to the writer');
+    controller.abort();
+    await assert.rejects(operation, (error: any) => error.status === 499 && /取消/.test(error.message));
+    const after = await f.service.get(a.id);
+    assert.equal(after.running, undefined);
+    assert.equal(after.steps.diagnose, 'pending');
+    assert.equal(after.error, undefined);
+  } finally { await f.dispose(); }
+});

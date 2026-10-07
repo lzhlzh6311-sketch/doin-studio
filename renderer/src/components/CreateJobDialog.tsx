@@ -1,18 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, FileText, Link as LinkIcon, Users } from 'lucide-react';
 import { apiClient } from '../services/api';
 import { useAppStore } from '../store';
 import { Modal } from './ui/Modal';
+import { desktop } from '../electron-bridge';
+import { extractDouyinVideoLink } from '../utils/quickStart';
 
 interface CreateJobDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  /** 预填的抖音链接（来自剪贴板提示或快捷键）。 */
+  initialUrl?: string | null;
 }
 
 type InputMode = 'url' | 'text' | 'user-page';
 
-export function CreateJobDialog({ isOpen, onClose }: CreateJobDialogProps) {
+export function CreateJobDialog({ isOpen, onClose, initialUrl }: CreateJobDialogProps) {
   const [sourceUrl, setSourceUrl] = useState('');
   const [shareText, setShareText] = useState('');
   const [topic, setTopic] = useState('');
@@ -24,6 +28,32 @@ export function CreateJobDialog({ isOpen, onClose }: CreateJobDialogProps) {
   const navigate = useNavigate();
 
   const setJobs = useAppStore((state) => state.setJobs);
+  const [prefilledFromClipboard, setPrefilledFromClipboard] = useState(false);
+  const sourceUrlRef = useRef(sourceUrl);
+  sourceUrlRef.current = sourceUrl;
+
+  // 打开时自动填链接：优先用调用方给的；否则看剪贴板里有没有抖音链接（只填空输入框，不覆盖用户已输入的）。
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialUrl) { setInputMode('url'); setSourceUrl(initialUrl); setPrefilledFromClipboard(true); return; }
+    let alive = true;
+    void desktop.readClipboardText().then(text => {
+      const link = extractDouyinVideoLink(text);
+      if (!alive || !link) return;
+      if (sourceUrlRef.current.trim()) return;
+      setInputMode('url');
+      setSourceUrl(link);
+      setPrefilledFromClipboard(true);
+    });
+    return () => { alive = false; };
+  }, [isOpen, initialUrl]);
+
+  /** 用户把整段分享口令粘进链接框时，自动只留下链接。 */
+  const handleUrlChange = (value: string) => {
+    setPrefilledFromClipboard(false);
+    const link = extractDouyinVideoLink(value);
+    setSourceUrl(link && link !== value.trim() ? link : value);
+  };
 
   if (!isOpen) return null;
 
@@ -181,11 +211,15 @@ export function CreateJobDialog({ isOpen, onClose }: CreateJobDialogProps) {
               </label>
               <input
                 type="text"
+                aria-label="抖音视频链接"
                 value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder="https://www.douyin.com/video/..."
+                onChange={(e) => handleUrlChange(e.target.value)}
+                placeholder="粘贴抖音链接或整段分享口令，会自动识别链接"
                 className="w-full px-4 py-3 rounded-lg border border-line-ui bg-well text-ink placeholder-ink-muted focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all"
               />
+              {prefilledFromClipboard && sourceUrl && (
+                <p className="mt-2 text-xs text-ink-muted" data-testid="clipboard-prefill-hint">已从剪贴板填入链接，确认无误直接点创建。</p>
+              )}
             </div>
           )}
 

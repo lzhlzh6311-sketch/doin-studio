@@ -16,7 +16,13 @@ export function registerArticleRoutes(app: Express, deps: { articles: ArticleSer
   router.get('/:id',handle(async (req,res) => res.json({article:await s.get(String(req.params.id))})));
   router.patch('/:id',actor,handle(async (req,res) => res.json({article:await s.update(String(req.params.id),req.body)})));
   router.delete('/:id',actor,handle(async (req,res) => { await s.remove(String(req.params.id),req.body?.version); res.json({ok:true}); }));
-  router.post('/:id/steps/:step',actor,handle(async (req,res) => res.json({article:await s.run(String(req.params.id),String(req.params.step) as ArticleStep,req.body?.version)})));
+  router.post('/:id/steps/:step',actor,handle(async (req,res) => {
+    // 客户端断开（取消按钮 / 离开页面会中止请求）就同时中止后端的 AI 调用，不再白跑白扣额度。
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) controller.abort(); });
+    const article = await s.run(String(req.params.id),String(req.params.step) as ArticleStep,req.body?.version,controller.signal);
+    if (!res.headersSent && !controller.signal.aborted) res.json({article});
+  }));
   router.post('/:id/sources/read',actor,handle(async (req,res) => res.json({article:await s.readSources(String(req.params.id),req.body?.version,req.body?.sourceIds)})));
   router.post('/:id/publishing/preview',handle(async (req,res) => res.json({preview:await s.preview(String(req.params.id),req.body?.version)})));
   router.post('/:id/publishing/packages',actor,handle(async (req,res) => res.status(201).json({detail:await s.createPackage(String(req.params.id),req.body?.version,req.body?.previewRevision,getActor(req))})));

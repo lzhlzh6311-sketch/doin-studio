@@ -5,6 +5,7 @@ import { MAIN_NAV_ITEMS, ASSET_NAV_ITEMS, BOTTOM_NAV_ITEMS, getPageContext, isIt
 import { ThemeSwitcher } from '../shell/ThemeSwitcher';
 import { Modal } from '../ui/Modal';
 import { useOperatorStore } from '../../store/operator';
+import { QuickActions } from '../QuickActions';
 
 const allItems = [...MAIN_NAV_ITEMS, ...ASSET_NAV_ITEMS, ...BOTTOM_NAV_ITEMS];
 const mobileItems = [MAIN_NAV_ITEMS[0], MAIN_NAV_ITEMS[2], MAIN_NAV_ITEMS[5]];
@@ -69,6 +70,7 @@ export function StudioShell({ children }: { children: ReactNode }) {
       <div className="flex shrink-0 items-center gap-3"><ThemeSwitcher /><span className="hidden text-xs text-studio-ink-secondary lg:inline">{operator?.displayName || '本机用户'}</span></div>
     </header>
     <main id="studio-content" className="studio-content min-w-0 pb-24 pt-16 md:pb-6">{children}</main>
+    <QuickActions />
     <nav aria-label="手机主导航" className="safe-bottom fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 border-t border-studio-border bg-studio-panel md:hidden">
       {mobileItems.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/'} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs ${isItemActive(location.pathname, item) ? 'text-studio-accent' : 'text-studio-ink-secondary'}`}><item.icon size={19} /><span>{item.label}</span></NavLink>)}
       <button type="button" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-studio-ink-secondary"><MoreHorizontal size={19} /><span>更多</span></button>

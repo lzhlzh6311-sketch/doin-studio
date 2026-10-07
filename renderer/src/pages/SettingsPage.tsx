@@ -773,6 +773,36 @@ function StorageSection() {
   );
 }
 
+const CONVENIENCE_TOGGLES = [
+  { key: 'doin-studio.clipboard-prompt-off', label: '复制抖音链接后提示导入', description: '切回应用时检查剪贴板里的抖音链接，只在本机识别，不上传。' },
+  { key: 'doin-studio.quickstart-dismissed', label: '首页显示「开始之前」面板', description: '准备清单和三条创作入口。' },
+] as const;
+
+/** 便捷功能开关：存的是「关闭」标记，所以勾选 = 没有标记。 */
+function ConvenienceSettings() {
+  const readOff = (key: string) => { try { return window.localStorage.getItem(key) === '1'; } catch { return false; } };
+  const [off, setOff] = useState<Record<string, boolean>>(() => Object.fromEntries(CONVENIENCE_TOGGLES.map(t => [t.key, readOff(t.key)])));
+  const toggle = (key: string) => {
+    const next = !off[key];
+    try { if (next) window.localStorage.setItem(key, '1'); else window.localStorage.removeItem(key); } catch { /* 本次仍生效 */ }
+    setOff(state => ({ ...state, [key]: next }));
+  };
+  return (
+    <div className="rounded-lg border border-line bg-panel p-5" data-testid="convenience-settings">
+      <h3 className="font-semibold text-ink">便捷功能</h3>
+      <div className="mt-3 space-y-3">
+        {CONVENIENCE_TOGGLES.map(t => (
+          <label key={t.key} className="flex cursor-pointer items-start gap-3">
+            <input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--color-accent)]" checked={!off[t.key]} onChange={() => toggle(t.key)} />
+            <span><span className="block text-sm font-medium text-ink">{t.label}</span><span className="block text-xs text-ink-muted">{t.description}</span></span>
+          </label>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-ink-subtle">快捷键：Ctrl+N（Mac 为 ⌘N）新建视频任务。长任务完成时会发系统通知（应用在前台时不打扰）。</p>
+    </div>
+  );
+}
+
 function AdvancedSection() {
   return (
     <section className="space-y-6">
@@ -781,6 +811,7 @@ function AdvancedSection() {
         title="高级选项"
         description="安全策略、运行诊断和本地数据管理。"
       />
+      <ConvenienceSettings />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <InfoCard
           icon={ShieldCheck}

@@ -45,7 +45,7 @@ async function createFromUI(title, videoID) {
   await page.goto(base);
   await page.getByRole('button', { name: '创建作品', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByPlaceholder('https://www.douyin.com/video/...').fill(`https://www.douyin.com/video/${videoID}`);
+  await dialog.getByLabel('抖音视频链接').fill(`https://www.douyin.com/video/${videoID}`);
   await dialog.locator('input[placeholder^="例如："]').fill(title);
   await dialog.getByRole('button', { name: '创建任务', exact: true }).click();
   await page.waitForURL(/\/jobs\//);
@@ -68,6 +68,25 @@ try {
   await page.reload();
   await page.getByRole('heading', { name: '第二件商品：保留所选作品，刷新后仍然正确', exact: true }).waitFor();
   checks.push('UI creates two real persisted manual jobs without an AI key; second detail survives refresh');
+
+  // 易用性：开始面板、?create= 预填链接、粘贴整段分享口令只留链接、Ctrl+N 打开新建
+  await page.goto(base);
+  await page.getByTestId('quickstart-panel').waitFor();
+  await page.goto(`${base}/?create=${encodeURIComponent('https://v.douyin.com/smoke123/')}`);
+  const prefilled = page.getByRole('dialog').getByLabel('抖音视频链接');
+  await prefilled.waitFor();
+  assert.equal(await prefilled.inputValue(), 'https://v.douyin.com/smoke123/');
+  await prefilled.fill('7.43 复制打开抖音，看看【作品】 https://v.douyin.com/paste456/ Dbg:/ 08/12');
+  assert.equal(await prefilled.inputValue(), 'https://v.douyin.com/paste456/');
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  await page.keyboard.press('Control+n');
+  await page.getByRole('dialog').getByLabel('抖音视频链接').waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  await page.goto(`${base}/settings?section=advanced`);
+  await page.getByTestId('convenience-settings').waitFor();
+  checks.push('Quick start panel, ?create= prefill, share-text paste cleanup, Ctrl+N and convenience settings work');
   await page.goto(base);
   await page.getByRole('button', { name: '卡片视图', exact: true }).click();
   await page.getByRole('link', { name: '打开作品：第二件商品：保留所选作品，刷新后仍然正确' }).click();
@@ -86,7 +105,7 @@ try {
   checks.push('Real multipart image upload remains in the asset library after refresh');
 
   await page.goto(`${base}/hotspots`);
-  const related = page.getByRole('link', { name: '在抖音查找相关视频 ↗' }).first();
+  const related = page.getByRole('link', { name: '找相关抖音视频做二创 ↗' }).first();
   await related.waitFor();
   assert.match(await related.getAttribute('href'), /^https:\/\/www\.douyin\.com\/search\//);
   await page.getByRole('button', { name: /^收藏：/ }).first().click();

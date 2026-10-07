@@ -6,6 +6,7 @@ import { Layout } from '../components/Layout';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { apiClient, parseApiError } from '../services/api';
+import { blockedNavigationAction } from '../utils/navigationGuards';
 
 const sameItem = (a: HotspotItem, b: HotspotItem) => a.sourceId === b.sourceId && a.itemId === b.itemId;
 const timestamp = (value: string) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -73,11 +74,12 @@ export function HotspotsPage() {
   const sourceId = boards.some(board => board.source.id === params.get('source')) ? params.get('source')! : 'all';
   const dirty = !!editing && note !== editing.note;
   const blocker = useBlocker(dirty || noteSaving);
+  // 与文章页同一份判定（navigationGuards）：忙时确认后也能离开，绝不把用户锁在页面里。
   useEffect(() => {
-    if (blocker.state === 'blocked') {
-      if (!noteSaving && window.confirm('备注尚未保存，放弃编辑并离开？')) blocker.proceed(); else blocker.reset();
-    }
-  }, [blocker, noteSaving]);
+    if (blocker.state !== 'blocked') return;
+    const action = blockedNavigationAction({ busy: noteSaving, dirty, dirtyMessage: '备注尚未保存，放弃编辑并离开？', confirm: message => window.confirm(message) });
+    if (action === 'proceed') blocker.proceed(); else blocker.reset();
+  }, [blocker, noteSaving, dirty]);
   useEffect(() => {
     if (!dirty && !noteSaving) return;
     const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };

@@ -178,3 +178,15 @@ test('取消 AI 声明 → 出现阻塞原因且创建按钮禁用', () => {
   })));
   assert.equal(/小红书要求声明/u.test(ready), false);
 });
+
+test('while creating, the footer offers a working 取消创建 instead of a dead disabled button', () => {
+  let cancelled = 0;
+  const busy = renderToStaticMarkup(React.createElement(NotePackageForm, formProps({ busy: true, onCancelBusy: () => { cancelled++; } })));
+  assert.match(busy, /取消创建/u);
+  assert.doesNotMatch(busy, /<button type="button" disabled="" class="rounded-lg border border-line[^"]*">取消创建/u);
+
+  // 没有接取消入口时保持旧行为（忙时禁用），避免误关。
+  const legacy = renderToStaticMarkup(React.createElement(NotePackageForm, formProps({ busy: true })));
+  assert.match(legacy, /<button type="button" disabled=""[^>]*>取消<\/button>/u);
+  assert.equal(cancelled, 0);
+});

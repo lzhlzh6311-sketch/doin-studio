@@ -2,6 +2,8 @@
 
 > 规则：每次完成一轮操作后，只追加简短记录；下次开始新任务前，先看这份文件，再决定是否需要补充上下文。
 
+- 2026-10-07：发布前加固（分支 `chore/repo-cleanup`）。基线 `npm run check` 通过、`npm test` 1123 项中 9 项被取消（`runtime-checks` 兜底超时被 `unref`，事件循环提前退出），修复后 1145 项 1098 通过 0 失败（47 项因缺 Playwright 浏览器跳过），`npm run build` 通过。长操作接 AbortController 并加「取消」；文章/素材/热点页忙时确认即可离开。安全：本机 API 加来源守卫与桌面端每次启动的令牌、独立后端只听 127.0.0.1、Electron 开 sandbox 并拦截站外导航/新窗口/危险外链/非本页 IPC、`/api/config` 打码、配置与 Cookie 0600、yt-dlp 来源校验加 `--`、async 路由兜底错误处理、Cookie 提取改异步、原型键不再命中任务/合集。Electron GUI 未在沙箱冒烟，见 `docs/STATUS.md`。
+- 2026-10-07：仓库迁到 `lzhlzh6311-sketch/doin-studio`。README 的 Actions 链接与 `appId` 改为新仓库；`src/server.ts` 环境变量统一用 `env()` 读取，空串/空白视为未配置，与桌面端口径一致；`AGENTS.md` 标题更新为 Doin Studio。新增 `docs/STATUS.md` 汇总真实未完成事项（计划文档的勾选状态不反映实际进度）。
 - 2026-09-29：按用户要求仅分析公众号“保存草稿”可行性并更新规格/计划，新增 `docs/research/2026-09-29-wechat-draft-feasibility.md`。用户确认个人订阅号仍未认证或审核中；官方草稿方案技术可行，但真实账号写权限未验收，`draft/count` 仅为查询预检，不能证明素材上传/建草稿可用。现有文章/图片/客户端专项 99/99 通过；发布中心编排与配置/UI 未接通。另以假 HTTP/纯函数确认客户端超时未接入、空数量响应假成功、正文恰好 20000 字符放行等缺口，留待恢复开发修复。本轮未改应用源码、未调用真实账号或写入微信内容。
 
 ## 当前状态

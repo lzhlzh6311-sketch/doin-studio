@@ -4,7 +4,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -74,8 +74,48 @@ export async function loadConfig(): Promise<AppConfig> {
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {
-  await mkdir(CONFIG_DIR, { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+  // 配置里有 API Key：目录与文件只给当前用户读写（Windows 上 mode 会被忽略）。
+  await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), { encoding: "utf-8", mode: 0o600 });
+  await chmod(CONFIG_PATH, 0o600).catch(() => undefined);
+}
+
+/**
+ * 给界面看的密钥：只保留首 8 位与末 4 位（界面本来就只显示这两段），中间打码。
+ * 早先 `GET /api/config` 原样返回明文 Key。
+ */
+export function maskSecret(value: string | undefined): string | undefined {
+  if (!value) return value;
+  if (value.length <= 12) return "•".repeat(value.length);
+  return `${value.slice(0, 8)}${"•".repeat(Math.min(value.length - 12, 24))}${value.slice(-4)}`;
+}
+
+export function publicConfig(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    aiKeys: (config.aiKeys ?? []).map((key) => ({ ...key, apiKey: maskSecret(key.apiKey) ?? "" })),
+    ...(config.asrApiKey ? { asrApiKey: maskSecret(config.asrApiKey) } : {}),
+  };
+}
+
+/**
+ * 把界面回传的整份配置合进现有配置：回传的密钥若仍是打码值（或为空），保留原密钥，
+ * 避免「读一遍再存一遍」把真实 Key 覆盖成打码串。
+ */
+export function mergeIncomingConfig(existing: AppConfig, incoming: AppConfig): AppConfig {
+  const keep = (next: string | undefined, current: string | undefined) =>
+    !next || (current !== undefined && next === maskSecret(current)) ? current : next;
+  const byId = new Map((existing.aiKeys ?? []).map((key) => [key.id, key]));
+  return {
+    ...incoming,
+    aiKeys: (Array.isArray(incoming.aiKeys) ? incoming.aiKeys : existing.aiKeys ?? []).map((key) => ({
+      ...key,
+      apiKey: keep(key.apiKey, byId.get(key.id)?.apiKey) ?? "",
+    })),
+    ...(incoming.asrApiKey !== undefined || existing.asrApiKey !== undefined
+      ? { asrApiKey: keep(incoming.asrApiKey, existing.asrApiKey) }
+      : {}),
+  };
 }
 
 function normalizeBaseURL(baseURL?: string): string {
@@ -156,7 +196,7 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/config", async (_req, res) => {
     try {
       const config = await loadConfig();
-      res.json(config);
+      res.json(publicConfig(config));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -165,7 +205,12 @@ export function registerConfigRoutes(app: Express): void {
   // 保存配置
   app.put("/api/config", async (req, res) => {
     try {
-      await saveConfig(req.body as AppConfig);
+      const incoming = req.body as AppConfig;
+      if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) {
+        res.status(400).json({ message: "配置格式无效" });
+        return;
+      }
+      await saveConfig(mergeIncomingConfig(await loadConfig(), incoming));
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -208,7 +253,7 @@ export function registerConfigRoutes(app: Express): void {
 
       config.aiKeys.push(newKey);
       await saveConfig(config);
-      res.json({ ok: true, id, key: newKey });
+      res.json({ ok: true, id, key: { ...newKey, apiKey: maskSecret(newKey.apiKey) ?? "" } });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

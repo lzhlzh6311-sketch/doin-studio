@@ -33,20 +33,29 @@ export function benchmarkDirty(state: {
 }
 
 /**
- * 文章详情页 blocker 处于 `blocked` 时该 `proceed` 还是 `reset`。
+ * 页面 blocker 处于 `blocked` 时该 `proceed` 还是 `reset`（文章页、素材页、热点页共用一份）。
  *
  * ⚠️ 必须**总是**返回一个动作。早先这里是 `if (busy) return;` —— 请求在途时既不前进也不复位，
  * blocker 就**永远停在 `blocked`**：此后每一次导航都被静默吞掉、连一次提示都不弹。
- * 与素材页 / 热点页同一口径：忙时不打断离开，但**一定 `reset`** 把拦截解除。
+ *
+ * 忙时也必须**有出口**（2026-10-07）：早先忙时一律 `reset`，用户在长请求期间根本离不开页面。
+ * 现在忙时弹一次确认，确认后放行 —— 页面卸载时会中止在途请求的等待（见 `CancellableOperation`），
+ * 已到达后端的请求可能仍会完成，文案如实说明。
  */
+export const BUSY_LEAVE_MESSAGE = '操作仍在进行。离开将停止等待结果（已提交的请求可能仍在后台完成）。确定离开？';
+
 export function blockedNavigationAction(input: {
   busy: boolean;
   dirty: boolean;
   confirm: (message: string) => boolean;
+  dirtyMessage?: string;
 }): 'proceed' | 'reset' {
-  if (input.busy) return 'reset';
+  if (input.busy) {
+    const message = input.dirty ? `${BUSY_LEAVE_MESSAGE}\n未保存的编辑也会丢失。` : BUSY_LEAVE_MESSAGE;
+    return input.confirm(message) ? 'proceed' : 'reset';
+  }
   if (!input.dirty) return 'proceed';
-  return input.confirm('编辑尚未保存，保留本地草稿并离开？') ? 'proceed' : 'reset';
+  return input.confirm(input.dirtyMessage ?? '编辑尚未保存，保留本地草稿并离开？') ? 'proceed' : 'reset';
 }
 
 /**

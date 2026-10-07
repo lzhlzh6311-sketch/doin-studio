@@ -481,3 +481,9 @@ test("JobStore reclean resets downstream steps and persists supplemental text fo
   assert.equal(cleaned.supplementalText, "补充要点：三步流程");
   assert.equal(cleaned.output.title, "补充后洗稿");
 });
+
+test("job sources must be http(s) links (a leading-dash value would reach yt-dlp as an option)", async () => {
+  const { isHttpSourceUrl } = await import("./jobs.js");
+  for (const ok of ["https://v.douyin.com/abc/", "http://example.com/v.mp4", "HTTPS://WWW.DOUYIN.COM/video/1"]) assert.equal(isHttpSourceUrl(ok), true, ok);
+  for (const bad of ["--exec=calc", "-o/tmp/x", "file:///etc/passwd", "javascript:alert(1)", "https://", "ftp://x/y", "douyin.com/video/1"]) assert.equal(isHttpSourceUrl(bad), false, bad);
+});

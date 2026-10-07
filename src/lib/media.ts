@@ -279,6 +279,8 @@ export class MediaService {
       "-o",
       outputTemplate,
       ...this.buildCookieArgs(),
+      // `--` 之后一律按位置参数处理：来源链接永远不会被 yt-dlp 当成选项（如 `--exec`）。
+      "--",
       sourceUrl
     ];
 

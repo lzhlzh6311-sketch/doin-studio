@@ -359,8 +359,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     return await Promise.race([
       promise,
       new Promise<never>((_resolve, reject) => {
+        // 不 unref：探测挂起时兜底超时必须真的触发，否则记录会永远停在 running。
         timer = setTimeout(() => reject(new RuntimeCheckTimeout()), ms);
-        timer.unref?.();
       }),
     ]);
   } finally {

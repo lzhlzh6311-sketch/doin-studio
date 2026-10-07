@@ -22,6 +22,7 @@ export interface ElectronAPI {
   // 应用信息
   getVersion: () => Promise<string>;
   getServerPort: () => Promise<number>;
+  getApiToken: () => Promise<string>;
 
   // 文件操作
   openExternal: (url: string) => Promise<void>;
@@ -101,6 +102,7 @@ contextBridge.exposeInMainWorld('electron', {
   // 应用信息
   getVersion: () => ipcRenderer.invoke('get-version'),
   getServerPort: () => ipcRenderer.invoke('get-server-port'),
+  getApiToken: () => ipcRenderer.invoke('get-api-token'),
 
   // 文件操作
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),

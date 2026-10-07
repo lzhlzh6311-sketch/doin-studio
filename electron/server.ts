@@ -1,4 +1,5 @@
 import { AddressInfo } from 'net';
+import { randomBytes } from 'crypto';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { app as electronApp } from 'electron';
@@ -8,6 +9,16 @@ import { resolveSauConfig, rememberSauConfig } from './utils/sau-config';
 import { resolveYtDlpCookieConfig } from './utils/ytdlp-config';
 
 let serverInstance: any = null;
+
+/**
+ * 每次启动随机生成的本机 API 令牌。只经 IPC（`get-api-token`）交给自己的渲染进程，
+ * 浏览器里的其他网页拿不到它，所以即便扫到了随机端口也调不动本机 API。
+ */
+const apiToken = randomBytes(32).toString('hex');
+
+export function getApiToken(): string {
+  return apiToken;
+}
 
 export async function startServer(): Promise<number> {
   if (serverInstance?.listening) return (serverInstance.address() as AddressInfo).port;
@@ -38,6 +49,9 @@ export async function startServer(): Promise<number> {
 
       // 创建 Express 应用
       const expressApp = await createExpressApp({
+        apiToken,
+        // 生产包从 file:// 加载页面（Origin 为不透明来源）；只在带令牌时放行。
+        allowOpaqueOrigin: true,
         storagePath: config.storagePath,
         rootDir: isDev ? path.join(__dirname, '../..') : electronApp.getAppPath(),
         aiProvider: activeKey?.provider || 'deepseek',

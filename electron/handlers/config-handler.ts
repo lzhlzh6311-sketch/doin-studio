@@ -1,4 +1,5 @@
-import { ipcMain, app, safeStorage } from 'electron';
+import { app, safeStorage } from 'electron';
+import { handleTrusted } from '../ipc-guard';
 import fs from 'fs/promises';
 import path from 'path';
 import { resolve4, resolve6 } from 'dns/promises';
@@ -194,8 +195,9 @@ export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
   // 确保目录存在
   await fs.mkdir(path.dirname(configPath), { recursive: true });
 
-  // 写入配置文件
-  await fs.writeFile(configPath, JSON.stringify(configToSave, null, 2), 'utf-8');
+  // 写入配置文件：只给当前用户读写（系统钥匙串不可用时 Key 会以明文落盘，至少不让其他用户读到）。
+  await fs.writeFile(configPath, JSON.stringify(configToSave, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  await fs.chmod(configPath, 0o600).catch(() => undefined);
 }
 
 // 添加 API Key
@@ -280,36 +282,36 @@ async function setActiveApiKey(keyId: string): Promise<void> {
 
 // 注册 IPC 处理器
 export function registerConfigHandlers(): void {
-  ipcMain.handle('get-config', async () => {
+  handleTrusted('get-config', async () => {
     const config = await loadConfig();
     return { ...config, wechatMp: publicWechatSettings(config.wechatMp) };
   });
 
-  ipcMain.handle('save-config', async (_, config: Partial<AppConfig>) => {
+  handleTrusted('save-config', async (_, config: Partial<AppConfig>) => {
     await saveConfig(config);
   });
 
-  ipcMain.handle('test-api-key', async (_, keyConfig: AIKeyInput) => {
+  handleTrusted('test-api-key', async (_, keyConfig: AIKeyInput) => {
     return await testApiKey(keyConfig);
   });
 
-  ipcMain.handle('add-api-key', async (_, keyConfig: AIKeyInput) => {
+  handleTrusted('add-api-key', async (_, keyConfig: AIKeyInput) => {
     return await addApiKey(keyConfig);
   });
 
-  ipcMain.handle('update-api-key', async (_, keyId: string, changes: AIKeyChanges) => {
+  handleTrusted('update-api-key', async (_, keyId: string, changes: AIKeyChanges) => {
     await updateApiKey(keyId, changes);
   });
 
-  ipcMain.handle('retest-api-key', async (_, keyId: string) => {
+  handleTrusted('retest-api-key', async (_, keyId: string) => {
     return await retestApiKey(keyId);
   });
 
-  ipcMain.handle('remove-api-key', async (_, keyId: string) => {
+  handleTrusted('remove-api-key', async (_, keyId: string) => {
     await removeApiKey(keyId);
   });
 
-  ipcMain.handle('set-active-api-key', async (_, keyId: string) => {
+  handleTrusted('set-active-api-key', async (_, keyId: string) => {
     await setActiveApiKey(keyId);
   });
 }

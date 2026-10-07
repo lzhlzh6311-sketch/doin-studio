@@ -28,9 +28,11 @@ import { registerGalleryRoutes } from "./lib/gallery-routes.js";
 import { HotspotService } from "./lib/hotspots.js";
 import { registerHotspotRoutes } from "./lib/hotspot-routes.js";
 import { sendRangeResponse } from "./lib/range-response.js";
-import { JobStepError, JobStore } from "./lib/jobs.js";
+import { JobInputError, JobStepError, JobStore } from "./lib/jobs.js";
 import { CollectionStore } from "./lib/collections.js";
 import { registerConfigRoutes } from "./lib/config-server.js";
+import { createLocalOriginGuard } from "./lib/local-origin-guard.js";
+import { catchAsyncRouteErrors } from "./lib/async-routes.js";
 import { HyperframesVideoGenerator } from "./lib/hyperframes-video.js";
 import { simplifyChineseValue } from "./lib/chinese.js";
 import { buildSkillContext, getSkillErrorMessage, isRetryableSkillError } from "./lib/skill-generation.js";
@@ -113,6 +115,10 @@ export interface ServerConfig {
   resolveSourceVideo?: typeof resolveSourceVideo;
   /** 素材上传限额（测试注入更小值以免构造大文件）。 */
   assetUploadLimits?: { maxFileBytes?: number; maxFiles?: number };
+  /** 本机 API 令牌（桌面端每次启动随机生成）；设置后 `/api/*` 必须携带。见 local-origin-guard.ts。 */
+  apiToken?: string;
+  /** 放行 file:// 页面的不透明来源（仅在设置了 apiToken 时生效）。 */
+  allowOpaqueOrigin?: boolean;
 }
 
 /**
@@ -145,6 +151,11 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   await localUsers.init();
   const localSessions = new LocalSessionStore(localUsers);
   const app = express();
+  // 必须在注册任何路由之前：async 路由的拒绝统一交给兜底错误处理（Express 4 不会自己接住）。
+  catchAsyncRouteErrors(app);
+  app.disable("x-powered-by");
+  // 来源守卫必须先于一切路由：回环 Host、回环 Origin、可选的本机令牌（取代早先的 `ACAO: *`）。
+  app.use(createLocalOriginGuard({ apiToken: config.apiToken, allowOpaqueOrigin: config.allowOpaqueOrigin }));
   app.locals.localUsers = localUsers;
   app.locals.localSessions = localSessions;
 
@@ -369,18 +380,6 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   });
   await collections.init();
 
-  // CORS 中间件（开发环境）
-  app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Local-Session, Last-Event-ID');
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(200);
-      return;
-    }
-    next();
-  });
-
   app.use(express.json({ limit: "2mb" }));
   registerLocalUserRoutes(app, { users: localUsers, sessions: localSessions });
   registerAssetRoutes(app, { assets: assetStore, prompts: imagePrompts, sessions: localSessions, limits: config.assetUploadLimits });
@@ -504,7 +503,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "job create failed";
-      res.status(500).json({ message });
+      res.status(error instanceof JobInputError ? 400 : 500).json({ message });
     }
   });
 
@@ -2228,7 +2227,26 @@ ${tpl.topic}
     }
   });
 
+  // 兜底错误处理：任何漏到这里的错误都回安全的 JSON，不把堆栈/本机路径吐给客户端，也不让进程崩溃。
+  app.use(finalErrorHandler);
+
   return app;
+}
+
+function finalErrorHandler(error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction): void {
+  const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
+  if (status >= 500) console.error(`[api] ${req.method} ${req.path} failed:`, error);
+  if (res.headersSent) { res.destroy(); return; }
+  if ((error as { type?: unknown })?.type === "entity.parse.failed") {
+    res.status(400).json({ code: "invalid_json", message: "请求 JSON 格式无效" });
+    return;
+  }
+  if ((error as { type?: unknown })?.type === "entity.too.large") {
+    res.status(413).json({ code: "payload_too_large", message: "请求内容过大" });
+    return;
+  }
+  const safeStatus = status >= 400 && status < 600 ? status : 500;
+  res.status(safeStatus).json({ code: safeStatus >= 500 ? "internal_error" : "request_failed", message: safeStatus >= 500 ? "服务器内部错误，请稍后重试" : "请求无法处理" });
 }
 
 async function sendResolvedVideo(

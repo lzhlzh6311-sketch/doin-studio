@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ImagePromptPanel } from './ImagePromptPanel';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
-import { FileText } from 'lucide-react';
-import { apiClient, parseApiError } from '../services/api';
+import { FileText, X } from 'lucide-react';
+import { apiClient, isRequestCancelled, parseApiError } from '../services/api';
+import { CancellableOperation, CANCELLED_NOTICE } from '../utils/cancellableOperation';
 import { articleDialogCloseDecision } from '../utils/navigationGuards';
 import type {
   AssetRecord,
@@ -68,6 +69,10 @@ export function CreateToutiaoArticleDialog({ jobId, title, onClose, platform = '
   const [previewError, setPreviewError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [cancelNotice, setCancelNotice] = useState('');
+  // 「创建文章包」可取消：AbortController 中止等待；关闭弹窗（卸载）同样中止。
+  const operation = useRef(new CancellableOperation());
+  useEffect(() => () => operation.current.dispose(), []);
   const [created, setCreated] = useState<{ id: string; version: number } | undefined>(undefined);
   const copyTouched = useRef(false);
   const previewSequence = useRef(0);
@@ -163,6 +168,8 @@ export function CreateToutiaoArticleDialog({ jobId, title, onClose, platform = '
   const create = async () => {
     setBusy(true);
     setError('');
+    setCancelNotice('');
+    const signal = operation.current.begin();
     try {
       const input = buildToutiaoArticleInput({
         sourceJobId: jobId,
@@ -178,11 +185,13 @@ export function CreateToutiaoArticleDialog({ jobId, title, onClose, platform = '
         source,
         ...(selectedCoverId ? { coverAssetId: selectedCoverId } : {}),
       });
-      const detail = await apiClient.createPublishingPackage(input);
+      const detail = await apiClient.createPublishingPackage(input, { signal });
       setCreated({ id: detail.package.id, version: detail.package.version });
     } catch (createError) {
-      setError(parseApiError(createError).message);
+      if (isRequestCancelled(createError)) setCancelNotice(CANCELLED_NOTICE);
+      else setError(parseApiError(createError).message);
     } finally {
+      operation.current.finish(signal);
       setBusy(false);
     }
   };
@@ -202,10 +211,16 @@ export function CreateToutiaoArticleDialog({ jobId, title, onClose, platform = '
       footer={
         <>
           <Button variant="outline" onClick={close}>{created ? '关闭' : '取消'}</Button>
+          {!created && busy && (
+            <Button variant="outline" onClick={() => operation.current.cancel()}>
+              <X size={16} aria-hidden="true" />
+              取消创建
+            </Button>
+          )}
           {!created && (
             <Button variant="ai" onClick={() => void create()} disabled={!canCreate}>
               <FileText size={16} aria-hidden="true" />
-              创建文章包
+              {busy ? '正在创建…' : '创建文章包'}
             </Button>
           )}
         </>
@@ -394,6 +409,7 @@ export function CreateToutiaoArticleDialog({ jobId, title, onClose, platform = '
 
               {wechat ? <p className="text-sm text-ink-muted">只保存公众号草稿，正式发布须由你在公众号后台操作。权限不足时可下载 HTML 和图片手工编辑。</p> : null}
               {error ? <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p> : null}
+              {cancelNotice ? <p role="status" className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">{cancelNotice}</p> : null}
             </>
           )}
       </div>

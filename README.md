@@ -18,7 +18,7 @@
 
 ## 下载和使用
 
-在 GitHub [Actions](https://github.com/Sakuralaaa/doin-studio/actions) 中选择成功的 `Desktop validation and Windows installer`，下载 `doin-studio-windows-<提交SHA>` Artifact，解压后运行 `Doin-Studio-0.1.0-windows-x64.exe`。安装器尚未进行代码签名，SHA256 随安装器提供。只采用 Windows job 成功的版本。
+在 GitHub [Actions](https://github.com/lzhlzh6311-sketch/doin-studio/actions) 中选择成功的 `Desktop validation and Windows installer`，下载 `doin-studio-windows-<提交SHA>` Artifact，解压后运行 `Doin-Studio-0.1.0-windows-x64.exe`。安装器尚未进行代码签名，SHA256 随安装器提供。只采用 Windows job 成功的版本。
 
 应用启动后自动创建或恢复本机操作者，无需 SaaS 账号。资料存于 Windows 用户的 Electron 数据目录，可在设置中修改存储目录。AI 文案需配置兼容 API，抖音采集需有效登录态；图片目前是提示词和素材工作流，并不自动调用图片生成接口。当前成片为图文动画，不含自动 TTS 配音。
 

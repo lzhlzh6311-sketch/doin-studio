@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { Check, Images, Loader2, Upload, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { apiClient, parseApiError } from '../services/api';
+import { apiClient, isRequestCancelled, parseApiError } from '../services/api';
+import { CancellableOperation, CANCELLED_NOTICE } from '../utils/cancellableOperation';
 import type {
   AssetRecord,
   NoteImageSource,
@@ -65,6 +66,9 @@ export function CreateNotePackageDialog({ jobId, title, onClose }: Props) {
   const [previewError, setPreviewError] = useState('');
   const [titleCompressed, setTitleCompressed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 「创建图文包」可取消：忙时底部「取消」变为中止等待；关闭弹窗（卸载）同样中止。
+  const operation = useRef(new CancellableOperation());
+  useEffect(() => () => operation.current.dispose(), []);
   const [error, setError] = useState('');
   const [created, setCreated] = useState<PublishingPackageDetail | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -194,6 +198,7 @@ export function CreateNotePackageDialog({ jobId, title, onClose }: Props) {
   const create = async () => {
     setBusy(true);
     setError('');
+    const signal = operation.current.begin();
     try {
       setCreated(await apiClient.createPublishingPackage(buildNotePackageInput({
         sourceJobId: jobId,
@@ -204,10 +209,11 @@ export function CreateNotePackageDialog({ jobId, title, onClose }: Props) {
         selectedImageIds,
         platforms,
         xhsOptions: { aiDeclaration: xhsAiDeclaration, submit: xhsSubmit },
-      })));
+      }), { signal }));
     } catch (requestError) {
-      setError(parseApiError(requestError).message);
+      setError(isRequestCancelled(requestError) ? CANCELLED_NOTICE : parseApiError(requestError).message);
     } finally {
+      operation.current.finish(signal);
       setBusy(false);
     }
   };
@@ -263,6 +269,7 @@ export function CreateNotePackageDialog({ jobId, title, onClose }: Props) {
               error={error || previewError}
               onCreate={() => void create()}
               onClose={onClose}
+              onCancelBusy={() => operation.current.cancel()}
             />
           )}
         </div>
@@ -301,6 +308,8 @@ export interface NotePackageFormProps {
   error: string;
   onCreate: () => void;
   onClose: () => void;
+  /** 忙时「取消」的动作：中止等待中的请求。不给就保持旧行为（忙时禁用）。 */
+  onCancelBusy?: () => void;
 }
 
 /** 纯展示表单：数据与副作用都在容器里，这里只渲染（因此可以被静态渲染断言守住）。 */
@@ -530,8 +539,8 @@ export function NotePackageForm(props: NotePackageFormProps) {
         用户要先滚到底才能找到它 —— 本项目已经因为「入口藏起来」返工过两次。
       */}
       <div className="sticky bottom-0 z-10 -mx-5 -mb-5 mt-4 flex items-center justify-between gap-3 border-t border-line bg-panel px-5 py-4">
-        <button type="button" onClick={props.onClose} disabled={props.busy} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink hover:bg-elevated disabled:opacity-50">
-          取消
+        <button type="button" onClick={props.busy && props.onCancelBusy ? props.onCancelBusy : props.onClose} disabled={props.busy && !props.onCancelBusy} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink hover:bg-elevated disabled:opacity-50">
+          {props.busy && props.onCancelBusy ? '取消创建' : '取消'}
         </button>
         <button
           type="button"

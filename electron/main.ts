@@ -1,14 +1,21 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, session, shell, type WebContents } from 'electron';
 import path from 'path';
 import { startServer, stopServer } from './server';
 import { registerConfigHandlers } from './handlers/config-handler';
 import { registerStorageHandlers } from './handlers/storage-handler';
 import { registerAppHandlers } from './handlers/app-handler';
+import { rendererTrustOptions } from './ipc-guard';
+import { isSafeExternalUrl, isTrustedRendererUrl } from './utils/window-security';
 
 // 禁用硬件加速，避免某些系统的兼容性问题
 app.disableHardwareAcceleration();
 app.setName('Doin Studio');
 if (process.env.DOIN_USER_DATA_DIR) app.setPath('userData', path.resolve(process.env.DOIN_USER_DATA_DIR));
+
+// 主进程里漏网的 Promise 拒绝只记日志，不让它悄悄吞掉或拖垮整个应用。
+process.on('unhandledRejection', (reason) => {
+  console.error('[Main] Unhandled promise rejection:', reason);
+});
 
 // 注册所有 IPC 处理器
 registerConfigHandlers();
@@ -17,6 +24,27 @@ registerAppHandlers();
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
+
+/**
+ * 窗口只停留在应用自己的页面上：其它导航与 `target="_blank"` 一律拦下，
+ * http/https/mailto 交给系统浏览器 —— 远程网页绝不能在带 preload 的窗口里运行。
+ */
+function hardenWebContents(contents: WebContents) {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isSafeExternalUrl(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  const guard = (event: { preventDefault: () => void }, url: string) => {
+    if (isTrustedRendererUrl(url, rendererTrustOptions())) return;
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) void shell.openExternal(url);
+  };
+  contents.on('will-navigate', guard);
+  contents.on('will-redirect', guard);
+  contents.on('will-attach-webview', (event) => event.preventDefault());
+}
+
+app.on('web-contents-created', (_event, contents) => hardenWebContents(contents));
 
 async function createWindow() {
   console.log('[Main] Starting createWindow...');
@@ -42,7 +70,11 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // preload 只用 contextBridge/ipcRenderer，可以在沙箱里跑。
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
     },
     titleBarStyle: 'default',
     show: false, // 等待加载完成后再显示
@@ -107,6 +139,10 @@ async function createWindow() {
 
 // 应用准备就绪
 app.whenReady().then(() => {
+  // 本应用不需要摄像头、麦克风、定位等权限；只放行复制按钮与视频全屏用到的两项。
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
+    callback(permission === 'clipboard-sanitized-write' || permission === 'fullscreen');
+  });
   void createWindow().catch(error => { console.error('[Main] Startup failed', error); app.exit(1); });
 
   // macOS：点击 Dock 图标时重新创建窗口

@@ -8,6 +8,8 @@ declare global {
   interface Window {
     electron: {
       getServerPort: () => Promise<number>;
+      /** 桌面端本机 API 令牌（浏览器开发模式没有）。 */
+      getApiToken?: () => Promise<string>;
       getConfig: () => Promise<any>;
       setConfig: (config: any) => Promise<void>;
       saveConfig?: (config: any) => Promise<void>;

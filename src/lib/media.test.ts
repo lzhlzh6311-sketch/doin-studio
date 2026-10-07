@@ -251,3 +251,24 @@ test("MediaService extracts Whisper-ready wav audio and records manifest", async
   assert.equal(manifest.audioPath, result.audioPath);
   assert.deepEqual(manifest.args, ffmpegCall.args);
 });
+
+test("yt-dlp always receives the source after a -- separator so it can never be parsed as an option", async () => {
+  const storageRoot = await mkdtemp(path.join(tmpdir(), "media-ytdlp-"));
+  const storage = new LocalStorage(storageRoot);
+  await storage.ensureBaseDirs();
+  const calls: string[][] = [];
+  const media = new MediaService(storage, {
+    ytDlpBinary: "fake-yt-dlp",
+    commandRunner: {
+      async run(_command: string, args: string[]) {
+        calls.push(args);
+        await writeFile(path.join(storageRoot, "raw", "videos", "job-y.mp4"), "video");
+        await writeFile(path.join(storageRoot, "raw", "videos", "job-y.info.json"), "{}");
+        return { stdout: "", stderr: "" };
+      }
+    }
+  } as any);
+  await (media as any).downloadViaYtDlp("https://www.douyin.com/video/1", "job-y");
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0]!.slice(-2), ["--", "https://www.douyin.com/video/1"]);
+});

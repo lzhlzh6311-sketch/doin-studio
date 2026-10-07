@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ApiClient, parseApiError, parseJobStepStreamEvent } from './api.js';
+import { ApiClient, isRequestCancelled, parseApiError, parseJobStepStreamEvent, REQUEST_CANCELLED_CODE } from './api.js';
 
 test('audio import persists its accepted batch before the caller receives it, even if the panel was closed', async t => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
@@ -240,4 +240,77 @@ test('打开小红书草稿调用本地会话 API，不走外部浏览器', asyn
   assert.equal(request.method, 'POST');
   assert.equal(request.url, '/api/publishing/xhs/drafts/window');
   assert.match(result.message, /本地草稿浏览器/u);
+});
+
+test('long operations forward an AbortSignal and a user cancel is reported as cancelled, not as a failure', async () => {
+  const client = new ApiClient();
+  const seen: Array<AbortSignal | undefined> = [];
+  client.getClient = async () => ({
+    request: async (config: { signal?: AbortSignal }) => {
+      seen.push(config.signal);
+      // 与 axios 的行为一致：signal 中止后以 CanceledError 拒绝。
+      await new Promise((_resolve, reject) => {
+        if (config.signal?.aborted) reject(Object.assign(new Error('canceled'), { name: 'CanceledError', code: 'ERR_CANCELED' }));
+        config.signal?.addEventListener('abort', () => reject(Object.assign(new Error('canceled'), { name: 'CanceledError', code: 'ERR_CANCELED' })), { once: true });
+      });
+      return { data: {} };
+    },
+  }) as unknown as Awaited<ReturnType<ApiClient['getClient']>>;
+
+  const calls: Array<(signal: AbortSignal) => Promise<unknown>> = [
+    signal => client.createArticlePackage('a-1', 1, 'rev', { signal }),
+    signal => client.runArticleStep('a-1', 'draft', 1, { signal }),
+    signal => client.readArticleSources('a-1', ['s'], 1, { signal }),
+    signal => client.previewArticle('a-1', 1, { signal }),
+    signal => client.createPublishingPackage({ sourceJobId: 'job-1', previewRevision: 'r', title: 't', platforms: [] }, { signal }),
+  ];
+  for (const call of calls) {
+    const controller = new AbortController();
+    const pending = call(controller.signal);
+    controller.abort();
+    await assert.rejects(pending, (error: Error & Record<string, unknown>) => {
+      assert.equal(error.name, 'PublishingApiError');
+      assert.equal(error.code, REQUEST_CANCELLED_CODE);
+      assert.equal(isRequestCancelled(error), true);
+      return true;
+    });
+  }
+  assert.equal(seen.length, calls.length);
+  assert.ok(seen.every(signal => signal instanceof AbortSignal));
+});
+
+test('parseApiError keeps ordinary failures distinct from cancellation', () => {
+  assert.equal(isRequestCancelled({ response: { status: 500 } }), false);
+  assert.equal(isRequestCancelled(null), false);
+  assert.equal(parseApiError({ code: 'ERR_CANCELED', name: 'CanceledError' }).code, REQUEST_CANCELLED_CODE);
+  assert.equal(parseApiError({ name: 'AbortError' }).message, '已取消等待');
+});
+
+test('desktop requests carry the per-launch API token: header for API calls, query for media URLs', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { electron: { getServerPort: async () => 4321, getApiToken: async () => 'token-abc' } } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete (globalThis as any).window; });
+
+  const client = new ApiClient();
+  const http = await client.getClient();
+  const response = await http.request({
+    url: '/api/jobs',
+    adapter: async config => ({ data: { token: config.headers?.get?.('X-Doin-Token') ?? null, baseURL: config.baseURL }, status: 200, statusText: 'OK', headers: {}, config }),
+  });
+  assert.deepEqual(response.data, { token: 'token-abc', baseURL: 'http://localhost:4321' });
+
+  assert.equal(await client.getAssetRawUrl('asset-1'), 'http://localhost:4321/api/assets/asset-1/raw?doin_token=token-abc');
+  assert.equal(await client.getVideoStreamUrl('job-1'), 'http://localhost:4321/api/jobs/job-1/video/stream?doin_token=token-abc');
+  assert.equal(
+    await client.getGalleryImageUrl('g-1', 2, 'gen 1'),
+    'http://localhost:4321/api/galleries/g-1/images/2?generation=gen+1&doin_token=token-abc',
+  );
+});
+
+test('browser development mode has no token and keeps plain URLs', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { electron: { getServerPort: async () => 5173 } } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete (globalThis as any).window; });
+  const client = new ApiClient();
+  assert.equal(await client.getAssetRawUrl('asset-1'), 'http://localhost:5173/api/assets/asset-1/raw');
 });

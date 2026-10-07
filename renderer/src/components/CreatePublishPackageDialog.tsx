@@ -2,7 +2,8 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronLeft, ChevronRight, Loader2, Send, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { apiClient, parseApiError } from '../services/api';
+import { apiClient, isRequestCancelled, parseApiError } from '../services/api';
+import { CancellableOperation, CANCELLED_NOTICE } from '../utils/cancellableOperation';
 import type { HyperframesVideoOutput, PublishPlatform, PublishingAssetInspection, PublishingPackageDetail } from '../types';
 import {
   buildCreatePublishingInput,
@@ -41,6 +42,10 @@ export function CreatePublishPackageDialog({ jobId, title, output, onClose }: Pr
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const busyRef = useRef(busy);
+  // 生成文案 / 创建发布包都可能很久：忙时底部左键变为「取消等待」；关闭弹窗（卸载）同样中止。
+  const operation = useRef(new CancellableOperation());
+  useEffect(() => () => operation.current.dispose(), []);
+  const failure = (requestError: unknown) => setError(isRequestCancelled(requestError) ? CANCELLED_NOTICE : parseApiError(requestError).message);
   const onCloseRef = useRef(onClose);
   busyRef.current = busy;
   onCloseRef.current = onClose;
@@ -102,13 +107,15 @@ export function CreatePublishPackageDialog({ jobId, title, output, onClose }: Pr
       return;
     }
     setBusy(true);
+    const signal = operation.current.begin();
     try {
-      const preview = await apiClient.previewPublishing(jobId, state.selectedPlatforms);
+      const preview = await apiClient.previewPublishing(jobId, state.selectedPlatforms, undefined, undefined, { signal });
       dispatch({ type: 'load-preview', preview, step: 'copy' });
       setActivePlatform(state.selectedPlatforms[0]);
     } catch (requestError) {
-      setError(parseApiError(requestError).message);
+      failure(requestError);
     } finally {
+      operation.current.finish(signal);
       setBusy(false);
     }
   };
@@ -116,8 +123,9 @@ export function CreatePublishPackageDialog({ jobId, title, output, onClose }: Pr
   const regenerate = async (platform: PublishPlatform) => {
     setBusy(true);
     setError('');
+    const signal = operation.current.begin();
     try {
-      const preview = await apiClient.previewPublishing(jobId, [platform]);
+      const preview = await apiClient.previewPublishing(jobId, [platform], undefined, undefined, { signal });
       const generated = preview.copies[platform];
       if (!generated) throw new Error('未生成该平台文案');
       dispatch({
@@ -130,8 +138,9 @@ export function CreatePublishPackageDialog({ jobId, title, output, onClose }: Pr
         },
       });
     } catch (requestError) {
-      setError(parseApiError(requestError).message);
+      failure(requestError);
     } finally {
+      operation.current.finish(signal);
       setBusy(false);
     }
   };
@@ -139,14 +148,17 @@ export function CreatePublishPackageDialog({ jobId, title, output, onClose }: Pr
   const createPackage = async () => {
     setBusy(true);
     setError('');
+    const signal = operation.current.begin();
     try {
       const result = await apiClient.createPublishingPackage(
         buildCreatePublishingInput(state, jobId, title),
+        { signal },
       );
       setCreated(result);
     } catch (requestError) {
-      setError(parseApiError(requestError).message);
+      failure(requestError);
     } finally {
+      operation.current.finish(signal);
       setBusy(false);
     }
   };
@@ -205,9 +217,15 @@ export function CreatePublishPackageDialog({ jobId, title, output, onClose }: Pr
 
         {!created && (
           <footer className="flex items-center justify-between border-t border-line px-5 py-4">
-            <button type="button" onClick={() => state.step === 'asset' ? onClose() : dispatch({ type: 'back' })} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink hover:bg-elevated disabled:opacity-50">
-              <ChevronLeft size={16} /> {state.step === 'asset' ? '取消' : '上一步'}
-            </button>
+            {busy ? (
+              <button type="button" onClick={() => operation.current.cancel()} className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink hover:bg-elevated">
+                <X size={16} /> 取消等待
+              </button>
+            ) : (
+              <button type="button" onClick={() => state.step === 'asset' ? onClose() : dispatch({ type: 'back' })} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink hover:bg-elevated disabled:opacity-50">
+                <ChevronLeft size={16} /> {state.step === 'asset' ? '取消' : '上一步'}
+              </button>
+            )}
             {state.step === 'confirm' ? (
               <button type="button" onClick={() => void createPackage()} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-ai px-4 py-2 text-sm font-medium text-on-accent hover:opacity-90 disabled:opacity-50">
                 {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} 创建发布包

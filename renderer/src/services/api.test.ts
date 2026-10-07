@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ApiClient, parseApiError, parseJobStepStreamEvent } from './api.js';
+import { ApiClient, isRequestCancelled, parseApiError, parseJobStepStreamEvent, REQUEST_CANCELLED_CODE } from './api.js';
 
 test('audio import persists its accepted batch before the caller receives it, even if the panel was closed', async t => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
@@ -240,4 +240,48 @@ test('打开小红书草稿调用本地会话 API，不走外部浏览器', asyn
   assert.equal(request.method, 'POST');
   assert.equal(request.url, '/api/publishing/xhs/drafts/window');
   assert.match(result.message, /本地草稿浏览器/u);
+});
+
+test('long operations forward an AbortSignal and a user cancel is reported as cancelled, not as a failure', async () => {
+  const client = new ApiClient();
+  const seen: Array<AbortSignal | undefined> = [];
+  client.getClient = async () => ({
+    request: async (config: { signal?: AbortSignal }) => {
+      seen.push(config.signal);
+      // 与 axios 的行为一致：signal 中止后以 CanceledError 拒绝。
+      await new Promise((_resolve, reject) => {
+        if (config.signal?.aborted) reject(Object.assign(new Error('canceled'), { name: 'CanceledError', code: 'ERR_CANCELED' }));
+        config.signal?.addEventListener('abort', () => reject(Object.assign(new Error('canceled'), { name: 'CanceledError', code: 'ERR_CANCELED' })), { once: true });
+      });
+      return { data: {} };
+    },
+  }) as unknown as Awaited<ReturnType<ApiClient['getClient']>>;
+
+  const calls: Array<(signal: AbortSignal) => Promise<unknown>> = [
+    signal => client.createArticlePackage('a-1', 1, 'rev', { signal }),
+    signal => client.runArticleStep('a-1', 'draft', 1, { signal }),
+    signal => client.readArticleSources('a-1', ['s'], 1, { signal }),
+    signal => client.previewArticle('a-1', 1, { signal }),
+    signal => client.createPublishingPackage({ sourceJobId: 'job-1', previewRevision: 'r', title: 't', platforms: [] }, { signal }),
+  ];
+  for (const call of calls) {
+    const controller = new AbortController();
+    const pending = call(controller.signal);
+    controller.abort();
+    await assert.rejects(pending, (error: Error & Record<string, unknown>) => {
+      assert.equal(error.name, 'PublishingApiError');
+      assert.equal(error.code, REQUEST_CANCELLED_CODE);
+      assert.equal(isRequestCancelled(error), true);
+      return true;
+    });
+  }
+  assert.equal(seen.length, calls.length);
+  assert.ok(seen.every(signal => signal instanceof AbortSignal));
+});
+
+test('parseApiError keeps ordinary failures distinct from cancellation', () => {
+  assert.equal(isRequestCancelled({ response: { status: 500 } }), false);
+  assert.equal(isRequestCancelled(null), false);
+  assert.equal(parseApiError({ code: 'ERR_CANCELED', name: 'CanceledError' }).code, REQUEST_CANCELLED_CODE);
+  assert.equal(parseApiError({ name: 'AbortError' }).message, '已取消等待');
 });

@@ -50,7 +50,31 @@ import { parseSkillProgressLine, type SkillProgressEvent } from '../utils/skill-
 
 export const ONLINE_AUDIO_BATCH_KEY = 'douyin-ai-video.online-audio-batch';
 
+/** 默认请求超时。长操作（转录、生成 Skill 等）需要很久，所以只能靠 `signal` 让用户主动取消。 */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 960_000;
+
+/** 可取消的长操作的附加参数。 */
+export interface RequestOptions {
+  signal?: AbortSignal;
+}
+
+export const REQUEST_CANCELLED_CODE = 'request_cancelled';
+
+/** 这个错误是否来自用户主动取消（AbortController）。取消不是失败，界面不应当按错误展示。 */
+export function isRequestCancelled(error: unknown): boolean {
+  const candidate = error as { name?: unknown; code?: unknown; __CANCEL__?: unknown } | null | undefined;
+  if (!candidate || typeof candidate !== 'object') return false;
+  return candidate.__CANCEL__ === true
+    || candidate.name === 'CanceledError'
+    || candidate.name === 'AbortError'
+    || candidate.code === 'ERR_CANCELED'
+    || candidate.code === REQUEST_CANCELLED_CODE;
+}
+
 export function parseApiError(error: unknown): ParsedApiError {
+  if (isRequestCancelled(error)) {
+    return { code: REQUEST_CANCELLED_CODE, message: '已取消等待' };
+  }
   const response = (error as {
     response?: { status?: unknown; data?: { code?: unknown; message?: unknown; details?: unknown } };
   })?.response;
@@ -151,11 +175,11 @@ export class ApiClient {
   async removeWechatBenchmark(id:string,version:number): Promise<void> {await this.publishingRequest({url:`/api/wechat-benchmarks/${encodeURIComponent(id)}`,method:'DELETE',data:{version}});}
   async searchWechatBenchmarks(keyword:string): Promise<BenchmarkSearchResult> {return (await this.publishingRequest<{result:BenchmarkSearchResult}>({url:'/api/wechat-benchmarks/search',method:'POST',data:{keyword},timeout:25000})).result;}
   async saveArticle(id: string, input: Record<string,unknown> & {version:number}): Promise<ArticleRecord> { return (await this.publishingRequest<{article:ArticleRecord}>({url:`/api/articles/${encodeURIComponent(id)}`,method:'PATCH',data:input})).article; }
-  async runArticleStep(id: string, step: ArticleStep, version: number): Promise<ArticleRecord> { return (await this.publishingRequest<{article:ArticleRecord}>({url:`/api/articles/${encodeURIComponent(id)}/steps/${step}`,method:'POST',data:{version},timeout:200000})).article; }
-  async readArticleSources(id: string, sourceIds: string[], version: number): Promise<ArticleRecord> { return (await this.publishingRequest<{article:ArticleRecord}>({url:`/api/articles/${encodeURIComponent(id)}/sources/read`,method:'POST',data:{sourceIds,version},timeout:60000})).article; }
+  async runArticleStep(id: string, step: ArticleStep, version: number, options: RequestOptions = {}): Promise<ArticleRecord> { return (await this.publishingRequest<{article:ArticleRecord}>({url:`/api/articles/${encodeURIComponent(id)}/steps/${step}`,method:'POST',data:{version},timeout:200000,signal:options.signal})).article; }
+  async readArticleSources(id: string, sourceIds: string[], version: number, options: RequestOptions = {}): Promise<ArticleRecord> { return (await this.publishingRequest<{article:ArticleRecord}>({url:`/api/articles/${encodeURIComponent(id)}/sources/read`,method:'POST',data:{sourceIds,version},timeout:60000,signal:options.signal})).article; }
   async removeArticle(id: string, version: number): Promise<void> { await this.publishingRequest({url:`/api/articles/${encodeURIComponent(id)}`,method:'DELETE',data:{version}}); }
-  async previewArticle(id: string, version: number): Promise<ArticlePreview> { return (await this.publishingRequest<{preview:ArticlePreview}>({url:`/api/articles/${encodeURIComponent(id)}/publishing/preview`,method:'POST',data:{version}})).preview; }
-  async createArticlePackage(id: string, version: number, previewRevision: string): Promise<PublishingPackageDetail> { return (await this.publishingRequest<{detail:PublishingPackageDetail}>({url:`/api/articles/${encodeURIComponent(id)}/publishing/packages`,method:'POST',data:{version,previewRevision},timeout:120000})).detail; }
+  async previewArticle(id: string, version: number, options: RequestOptions = {}): Promise<ArticlePreview> { return (await this.publishingRequest<{preview:ArticlePreview}>({url:`/api/articles/${encodeURIComponent(id)}/publishing/preview`,method:'POST',data:{version},signal:options.signal})).preview; }
+  async createArticlePackage(id: string, version: number, previewRevision: string, options: RequestOptions = {}): Promise<PublishingPackageDetail> { return (await this.publishingRequest<{detail:PublishingPackageDetail}>({url:`/api/articles/${encodeURIComponent(id)}/publishing/packages`,method:'POST',data:{version,previewRevision},timeout:120000,signal:options.signal})).detail; }
 
   async getHotspots(refresh = false): Promise<HotspotBoard[]> {
     return (await this.publishingRequest<{ boards: HotspotBoard[] }>({ url: refresh ? '/api/hotspots/refresh' : '/api/hotspots', method: refresh ? 'POST' : 'GET' })).boards;
@@ -219,7 +243,7 @@ export class ApiClient {
       }
       this.client = axios.create({
         baseURL: `http://localhost:${this.serverPort}`,
-        timeout: 960000,
+        timeout: DEFAULT_REQUEST_TIMEOUT_MS,
       });
       this.client.interceptors.request.use((request) => {
         if (this.localSessionToken) {
@@ -364,10 +388,12 @@ export class ApiClient {
     platforms: PublishPlatform[],
     contentType?: PackageContentType,
     images?: { imageSource?: NoteImageSource; imageAssetIds?: string[]; articleImageAssetIds?: string[] },
+    options: RequestOptions = {},
   ): Promise<PublishingPreview> {
     const response = await this.publishingRequest<{ preview: PublishingPreview }>({
       method: 'POST',
       url: `/api/jobs/${id}/publishing/preview`,
+      signal: options.signal,
       data: {
         platforms,
         ...(contentType ? { contentType } : {}),
@@ -565,11 +591,13 @@ export class ApiClient {
 
   async createPublishingPackage(
     input: CreatePublishingPackageInput,
+    options: RequestOptions = {},
   ): Promise<PublishingPackageDetail> {
     const response = await this.publishingRequest<{ package: PublishingPackageDetail }>({
       method: 'POST',
       url: '/api/publishing/packages',
       data: input,
+      signal: options.signal,
     });
     return response.package;
   }

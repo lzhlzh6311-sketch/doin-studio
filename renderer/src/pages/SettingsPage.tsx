@@ -792,7 +792,7 @@ function ConvenienceSettings() {
           </label>
         ))}
       </div>
-      <p className="mt-3 text-xs text-ink-subtle">快捷键：Ctrl+N（Mac 为 ⌘N）新建视频任务。长任务完成时会发系统通知（应用在前台时不打扰）。</p>
+      <p className="mt-3 text-xs text-ink-subtle">快捷键：Ctrl+N（Mac 为 ⌘N）新建视频任务，Ctrl+J（Mac 为 ⌘J）呼出创作助手。长任务完成时会发系统通知（应用在前台时不打扰）。</p>
     </div>
   );
 }

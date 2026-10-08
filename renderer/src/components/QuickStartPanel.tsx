@@ -107,7 +107,7 @@ export function QuickStartPanel({ onCreateVideo }: { onCreateVideo: () => void }
             : <button key={entry.title} type="button" onClick={entry.action} className={`${className} w-full`}>{body}</button>;
         })}
       </div>
-      <p className="mt-3 text-xs text-ink-subtle">小技巧：在抖音里点「复制链接」，切回 Doin Studio 会自动提示导入；按 Ctrl+N（Mac 为 ⌘N）随时新建视频任务。</p>
+      <p className="mt-3 text-xs text-ink-subtle">小技巧：在抖音里点「复制链接」，切回 Doin Studio 会自动提示导入；按 Ctrl+N（Mac 为 ⌘N）随时新建视频任务；按 Ctrl+J 呼出创作助手，直接说要做什么。</p>
     </section>
   );
 }

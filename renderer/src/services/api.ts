@@ -7,6 +7,8 @@ import type { Gallery, GalleryDraft, GalleryPreview, GallerySource } from '../..
 import type { HotspotBoard, HotspotFavorite } from '../../../src/lib/hotspots';
 import type { AudioBoard, AudioImportBatch, AudioPreview } from '../../../src/lib/online-audio';
 import type { WhisperModelStatus } from '../../../src/lib/whisper-model';
+import type { AgentEvent, AgentItem, AgentPageContext, AgentSession, AgentSessionSummary } from '../../../src/lib/agent/types';
+export type { AgentEvent, AgentItem, AgentPageContext, AgentSession, AgentSessionSummary };
 export type { WhisperModelStatus };
 import type { AudioSource, AudioBoardId, OnlineTrack } from '../../../src/lib/online-audio-sources';
 import type {
@@ -535,6 +537,81 @@ export class ApiClient {
 
   async openXhsDraftWindow(): Promise<{ message: string }> {
     return this.publishingRequest<{ message: string }>({ method: 'POST', url: '/api/publishing/xhs/drafts/window' });
+  }
+
+  // ── 创作助手 ──
+
+  async listAgentSessions(): Promise<AgentSessionSummary[]> {
+    return (await this.publishingRequest<{ sessions: AgentSessionSummary[] }>({ method: 'GET', url: '/api/agent/sessions' })).sessions;
+  }
+
+  async createAgentSession(): Promise<AgentSession> {
+    return (await this.publishingRequest<{ session: AgentSession }>({ method: 'POST', url: '/api/agent/sessions' })).session;
+  }
+
+  async getAgentSession(id: string): Promise<{ session: AgentSession; runId: string | null }> {
+    return this.publishingRequest<{ session: AgentSession; runId: string | null }>({ method: 'GET', url: `/api/agent/sessions/${id}` });
+  }
+
+  async deleteAgentSession(id: string): Promise<void> {
+    await this.publishingRequest({ method: 'DELETE', url: `/api/agent/sessions/${id}` });
+  }
+
+  async answerAgentApproval(runId: string, callId: string, approve: boolean): Promise<void> {
+    await this.publishingRequest({ method: 'POST', url: `/api/agent/runs/${runId}/approvals/${encodeURIComponent(callId)}`, data: { approve } });
+  }
+
+  async cancelAgentRun(runId: string): Promise<void> {
+    await this.publishingRequest({ method: 'POST', url: `/api/agent/runs/${runId}/cancel` });
+  }
+
+  /** 发一条消息，按 SSE 逐个回调事件；signal 中止即断开（后端随之停止本轮）。 */
+  async streamAgentMessage(
+    sessionId: string,
+    body: { text: string; context?: AgentPageContext; autoApprove: boolean },
+    onEvent: (event: AgentEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.getClient();
+    if (!this.localSessionToken) await this.refreshLocalOperatorSession().catch(() => undefined);
+    const send = () => fetch(`http://localhost:${this.serverPort}/api/agent/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.apiToken ? { [API_TOKEN_HEADER]: this.apiToken } : {}),
+        ...(this.localSessionToken ? { 'X-Local-Session': this.localSessionToken } : {}),
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+    let response = await send();
+    if (response.status === 401) {
+      // 后端重启后本机会话失效：静默重开再发一次
+      await this.refreshLocalOperatorSession().catch(() => undefined);
+      response = await send();
+    }
+    if (!response.ok || !response.body) {
+      const err = await response.json().catch(() => ({ message: `请求失败（HTTP ${response.status}）` })) as { message?: string };
+      throw new Error(err.message || '助手暂时不可用');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let index = buffer.indexOf('\n\n');
+      while (index >= 0) {
+        const block = buffer.slice(0, index);
+        buffer = buffer.slice(index + 2);
+        const line = block.split('\n').find(l => l.startsWith('data: '));
+        if (line) {
+          try { onEvent(JSON.parse(line.slice(6)) as AgentEvent); } catch { /* 跳过坏帧 */ }
+        }
+        index = buffer.indexOf('\n\n');
+      }
+    }
   }
 
   // ── 语音转录模型（按需下载）──

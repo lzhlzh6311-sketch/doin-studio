@@ -89,6 +89,21 @@ try {
   await page.goto(`${base}/settings?section=advanced`);
   await page.getByTestId('convenience-settings').waitFor();
   checks.push('Quick start panel, ?create= prefill, share-text paste cleanup, Ctrl+N and convenience settings work');
+
+  // 创作助手：Ctrl+J 呼出、页面相关的快捷提问、没配密钥时给中文指引、Esc 收起
+  await page.goto(`${base}/jobs/${second}`);
+  await page.getByRole('heading', { name: '第二件商品：保留所选作品，刷新后仍然正确', exact: true }).waitFor();
+  await page.keyboard.press('Control+j');
+  const assistant = page.getByTestId('assistant-panel');
+  await assistant.waitFor();
+  await assistant.getByRole('button', { name: '这条进行到哪一步了？' }).click();
+  await assistant.getByRole('alert').filter({ hasText: 'AI 模型与密钥' }).waitFor();
+  await assistant.getByLabel('给助手发消息').press('Escape');
+  await assistant.waitFor({ state: 'detached' });
+  await page.getByTestId('assistant-toggle').click();
+  await page.getByTestId('assistant-panel').waitFor();
+  await page.getByTestId('assistant-panel').getByRole('button', { name: '关闭助手' }).click();
+  checks.push('Assistant opens with Ctrl+J and the header button, offers page-aware prompts and explains a missing AI key in Chinese');
   await page.goto(base);
   await page.getByRole('button', { name: '卡片视图', exact: true }).click();
   await page.getByRole('link', { name: '打开作品：第二件商品：保留所选作品，刷新后仍然正确' }).click();

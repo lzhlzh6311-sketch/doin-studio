@@ -41,6 +41,16 @@ export function buildAppMenuTemplate(
             );
           },
         },
+        {
+          label: '创作助手',
+          accelerator: 'CmdOrCtrl+J',
+          registerAccelerator: false,
+          click: (_item, window) => {
+            void (window as BrowserWindow | undefined)?.webContents.executeJavaScript(
+              "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }))",
+            );
+          },
+        },
         { type: 'separator' },
         isMac ? { role: 'close', label: '关闭窗口' } : { role: 'quit', label: '退出' },
       ],

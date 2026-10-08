@@ -272,6 +272,7 @@
 .studio-card-hover { transition: border-color 160ms ease, box-shadow 160ms ease; }
 .studio-card-hover:hover { box-shadow: 0 8px 28px rgb(0 0 0 / 15%); }
 .studio-shell :is(button, input, textarea, select, a):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.studio-shell textarea.assistant-input:focus-visible { outline: none; }
 
 /* 数据要能竖着扫（剪辑台语汇）：时间码 / 计数 / ID */
 .tabular {

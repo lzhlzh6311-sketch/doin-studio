@@ -1,11 +1,13 @@
 import React, { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { Radio, PanelLeftClose, PanelLeftOpen, MoreHorizontal } from 'lucide-react';
+import { Radio, PanelLeftClose, PanelLeftOpen, MoreHorizontal, Sparkles } from 'lucide-react';
 import { MAIN_NAV_ITEMS, ASSET_NAV_ITEMS, BOTTOM_NAV_ITEMS, getPageContext, isItemActive, type NavItemDef } from './navigation';
 import { ThemeSwitcher } from '../shell/ThemeSwitcher';
 import { Modal } from '../ui/Modal';
 import { useOperatorStore } from '../../store/operator';
 import { QuickActions } from '../QuickActions';
+import { AssistantPanel } from '../../features/assistant/AssistantPanel';
+import { useAssistant } from '../../features/assistant/store';
 
 const allItems = [...MAIN_NAV_ITEMS, ...ASSET_NAV_ITEMS, ...BOTTOM_NAV_ITEMS];
 const mobileItems = [MAIN_NAV_ITEMS[0], MAIN_NAV_ITEMS[2], MAIN_NAV_ITEMS[5]];
@@ -22,6 +24,19 @@ export function StudioShell({ children }: { children: ReactNode }) {
   const context = getPageContext(location.pathname);
   const operator = useOperatorStore(state => state.currentUser);
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+  const assistantOpen = useAssistant(state => state.open);
+  const toggleAssistant = useAssistant(state => state.toggle);
+  // Ctrl/⌘+J：随时呼出 / 收起创作助手
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        toggleAssistant();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleAssistant]);
 
   const toggleRail = () => {
     setExpanded(value => {
@@ -67,10 +82,16 @@ export function StudioShell({ children }: { children: ReactNode }) {
         <span className="hidden text-xs text-studio-ink-secondary xl:inline">{context.category}</span>
         <p className="truncate text-sm font-semibold">{context.title}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-3"><ThemeSwitcher /><span className="hidden text-xs text-studio-ink-secondary lg:inline">{operator?.displayName || '本机用户'}</span></div>
+      <div className="flex shrink-0 items-center gap-3">
+        <button type="button" onClick={toggleAssistant} aria-expanded={assistantOpen} aria-label="创作助手" title="创作助手（Ctrl+J）" data-testid="assistant-toggle"
+          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm transition-colors ${assistantOpen ? 'border-accent-line bg-accent-soft text-accent' : 'border-studio-border text-studio-ink hover:border-accent-line hover:text-accent'}`}>
+          <Sparkles size={15} aria-hidden="true" /><span className="hidden sm:inline">助手</span>
+        </button>
+        <ThemeSwitcher /><span className="hidden text-xs text-studio-ink-secondary lg:inline">{operator?.displayName || '本机用户'}</span></div>
     </header>
     <main id="studio-content" className="studio-content min-w-0 pb-24 pt-16 md:pb-6">{children}</main>
     <QuickActions />
+    <AssistantPanel />
     <nav aria-label="手机主导航" className="safe-bottom fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 border-t border-studio-border bg-studio-panel md:hidden">
       {mobileItems.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/'} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs ${isItemActive(location.pathname, item) ? 'text-studio-accent' : 'text-studio-ink-secondary'}`}><item.icon size={19} /><span>{item.label}</span></NavLink>)}
       <button type="button" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-studio-ink-secondary"><MoreHorizontal size={19} /><span>更多</span></button>

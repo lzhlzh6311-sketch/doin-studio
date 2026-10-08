@@ -57,7 +57,11 @@ import { PublishingService, summarizeCliOutput } from "./lib/publishing-service.
 import { registerPublishingRoutes } from "./lib/publishing-routes.js";
 import { registerRuntimeRoutes } from "./lib/runtime-routes.js";
 import { WhisperModelManager } from "./lib/whisper-model.js";
-import { createDefaultRuntimeStatusDeps } from "./lib/runtime-status.js";
+import { registerAgentRoutes } from "./lib/agent/routes.js";
+import { AgentSessionStore } from "./lib/agent/sessions.js";
+import type { AgentChatClient } from "./lib/agent/runner.js";
+import { collectRuntimeStatus, createDefaultRuntimeStatusDeps, type RuntimeStatusConfig } from "./lib/runtime-status.js";
+import OpenAI from "openai";
 import type { AiProvider, CollectionRecord, DueNotification, PipelineStep, ScriptAsset, StreamablePipelineStep } from "./types.js";
 
 export interface ServerConfig {
@@ -77,6 +81,8 @@ export interface ServerConfig {
   whisperModelPath?: string;
   /** 旧安装包随带的模型路径；存在就直接用。 */
   whisperBundledModelPath?: string;
+  /** 测试用：替换助手的 AI 客户端。 */
+  agentClientFactory?: (config: { model: string; apiKey: string; baseURL?: string }) => unknown;
   /** 模型缺失时自动下载（桌面端与独立后端开启；测试默认关闭，避免联网）。 */
   whisperModelAutoDownload?: boolean;
   hyperframesNpxBinary?: string;
@@ -402,14 +408,15 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
   registerHotspotRoutes(app, { hotspots, sessions: localSessions });
   const wechatBenchmarks = new WechatBenchmarkService(storage);
   registerWechatBenchmarkRoutes(app, {benchmarks:wechatBenchmarks,sessions:localSessions});
-  registerArticleRoutes(app, {sessions:localSessions, articles:new ArticleService({storage,
+  const articleService = new ArticleService({storage,
     writer:config.articleWriter ?? new ArticleWritingService({resolveAiConfig:resolvePublishingAiConfig}),
     readSource:config.readArticleSource,
     resolveHotspot:(sourceId,itemId) => hotspots.resolveForArticle(sourceId,itemId),
     resolveBenchmark:id => wechatBenchmarks.forArticle(id),
     resolveAsset:id => assetStore.resolveFile(id),
     createPackage:input => publishingService.createIndependentArticle(input),
-  })});
+  });
+  registerArticleRoutes(app, {sessions:localSessions, articles:articleService});
   registerGalleryRoutes(app, { sessions: localSessions, galleries: new GalleryService({
     storage, jobs,
     media: new GalleryMedia({ ffmpegBinary: config.ffmpegBinary, ffprobeBinary: config.ffprobeBinary }),
@@ -427,10 +434,7 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
    * 只有**零副作用**的免费检查走这里：不起浏览器、不写文件。会开浏览器的深检是独立的
    * 后台任务（Task 2），必须手动触发 —— 理由见 spec §5.2（它会与发布抢同一个 profile）。
    */
-  registerRuntimeRoutes(app, {
-    sessions: localSessions,
-    whisperModel,
-    config: {
+  const runtimeStatusConfig: RuntimeStatusConfig = {
       storageRoot: config.storagePath,
       ...(config.sauBinary ? { sauBinary: config.sauBinary } : {}),
       ...(config.sauBaseDir ? { sauBaseDir: config.sauBaseDir } : {}),
@@ -457,9 +461,63 @@ export async function createExpressApp(config: ServerConfig): Promise<Express> {
         electron: path.resolve(appDir, "..", "dist-electron", "server.js"),
       },
       repoRoot: config.rootDir,
-    },
-    deps: createDefaultRuntimeStatusDeps(),
+  };
+  const runtimeStatusDeps = createDefaultRuntimeStatusDeps();
+  registerRuntimeRoutes(app, {
+    sessions: localSessions,
+    whisperModel,
+    config: runtimeStatusConfig,
+    deps: runtimeStatusDeps,
     checks: runtimeChecks,
+  });
+
+  /*
+   * 创作助手：工具全部包在现有服务外面（作品、热榜、公众号、运行环境）。
+   */
+  registerAgentRoutes(app, {
+    sessions: localSessions,
+    store: new AgentSessionStore(storage.resolve("agent", "sessions")),
+    resolveAiConfig: async () => {
+      const ai = await resolvePublishingAiConfig();
+      return ai ? { model: ai.model, apiKey: ai.apiKey, baseURL: ai.baseURL, maxOutputTokens: ai.maxOutputTokens } : null;
+    },
+    createClient: (ai) => (config.agentClientFactory?.(ai) ?? new OpenAI({ apiKey: ai.apiKey, baseURL: ai.baseURL, timeout: 120_000, maxRetries: 1 })) as unknown as AgentChatClient,
+    tools: {
+      listJobs: () => jobs.listOverview(),
+      getJob: async (id) => (await jobs.get(id)) ?? undefined,
+      readCleaned: async (id) => {
+        try { return simplifyChineseValue(await storage.readJson(path.join("processed", "cleaned", `${id}.json`))) as Record<string, unknown>; }
+        catch { return null; }
+      },
+      readTranscript: async (id) => {
+        const record = await jobs.get(id);
+        if (!record?.transcriptPath) return null;
+        try {
+          const asset = await storage.readJson<{ text?: unknown }>(record.transcriptPath);
+          return typeof asset?.text === "string" ? String(simplifyChineseValue(asset.text)) : null;
+        } catch { return null; }
+      },
+      createJob: async (input) => {
+        const record = await jobs.create(input);
+        if (config.whisperModelAutoDownload) whisperModel.start();
+        return record;
+      },
+      startJobStep: async (id, step) => {
+        const record = await jobs.get(id);
+        if (!record) throw new Error("作品不存在或已被删除");
+        // 后台跑：长步骤不阻塞对话；失败原因会写回作品的步骤状态
+        void jobs.runStep(id, step).catch(() => undefined);
+      },
+      hotspots: () => hotspots.list(false),
+      saveHotspot: (sourceId, itemId) => hotspots.save(sourceId, itemId),
+      listArticles: () => articleService.list(),
+      getArticle: (id) => articleService.get(id),
+      createArticle: (input) => articleService.create(input),
+      runtimeStatus: async () => {
+        const status = await collectRuntimeStatus(runtimeStatusConfig, runtimeStatusDeps);
+        return [...status.channels, ...status.dependencies].map((item) => ({ label: item.label, state: item.state, detail: item.detail }));
+      },
+    },
   });
 
   // 静态文件（开发环境可能不需要）
